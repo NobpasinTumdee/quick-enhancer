@@ -262,8 +262,9 @@ One commit per feature on the `v2.1` branch.
 * changed: `app.rs`, `config.rs`, `history.rs`, `ui/mod.rs`, `ui/queue.rs`, `ui/settings.rs`,
   `ui/outputs.rs`, `pipeline/{job,runner,stages,video_job}.rs`, `engines/filters.rs`,
   `locales/*.toml`, `main.rs`
-* new: `profiles.rs`, `resources.rs`, `bench.rs`, `editor/{mod,ffmpeg}.rs`,
-  `ui/{studio,video_page,image_page,profiles,perf,editor,settings_page}.rs`
+* new: `profiles.rs`, `resources.rs`, `bench.rs`, `editor.rs`,
+  `ui/{studio,profiles,perf,editor,settings_page}.rs` (the Video and Image pages share
+  `ui/studio.rs`; the editor's ffmpeg builders live in `editor.rs`)
 
 ### v2.1 Decisions
 * **No questions were needed**; everything below was decided from the prompt + code.
@@ -292,3 +293,41 @@ One commit per feature on the `v2.1` branch.
   layout uses the concat demuxer with `inpoint`/`outpoint` (stream copy); otherwise a
   `filter_complex` concat with scale+pad (letterbox), `fps`, `aresample`, and `anullsrc` for
   clips without audio.
+* Profiles are stored one TOML per profile as `<data>/profiles/<page>-<safe name>.toml`
+  (`schema_version`, `app_version`, `name`, `kind`, `settings`, optional `performance`). Loading
+  applies only the recipe (`JobSettings::recipe()`): output folder, overwrite policy and machine
+  fields are never taken from a profile file. "Modified" (`*`) compares the recipe with the
+  loaded profile. Built-ins are code, read-only, translated, and can be duplicated. Default and
+  last-used profile and the recent list (5) are stored per page in `config.toml`; the default
+  is applied at startup.
+* Resource checks are pure functions over a `SystemInfo` snapshot (refreshed every 3 s, not
+  per frame) so they can be unit-tested with fixed numbers. Levels: *Warn* allows starting
+  (after a confirmation in the pre-start dialog), *Block* doesn't. "Fix automatically" only
+  changes machine settings (+ encoder → Auto when the chosen one is unusable); it never changes
+  the recipe. The "FPS above monitor refresh" warning is shown inline only, not in the pre-start
+  dialog (it is informational: the file still has every frame).
+* Temp estimate: PNG ratio measured on real frames (EMA over `write_png_fast`), else the
+  benchmark's ratio, else 0.6. A running video pauses before creating a chunk while the temp
+  drive has less free space than one expanded chunk + 256 MB (status shows why) and resumes on
+  its own; cancel still works.
+* Benchmark: ~20 s on this RTX 5060 Ti (PNG write 8 frames, CPU filters, Real-ESRGAN x4plus on
+  640x360 at tiles 128/192/256 with a 1- vs 4-frame run to separate start-up from per-frame
+  cost, RIFE 2x on 4 frames, encoder 120 frames at 720p). Results per device in
+  `<data>/benchmark.json`; offered once after the first tools install. Auto-tune runs after a
+  benchmark and on request: fastest working tile (≤ 256 and VRAM-safe), `-j` 2:2:4 with ≥ 8
+  cores and spare VRAM, filter threads ≈ 75 % of cores, RAM budget = min(½ available, ¼ total),
+  chunk ≥ 25 s of GPU work (min 32) limited to 40 % of free temp space. Measured here: tile 128
+  was the fastest (2.2 s/MP for x4plus), so auto-tune picks 128, chunk 32, RAM 3.3 GB.
+* Encoder preset (Fast/Balanced/Quality → NVENC p3/p5/p7, x264/x265 fast/medium/slow, QSV, AMF,
+  SVT-AV1 presets) and bitrate mode (VBR with maxrate 1.5× / bufsize 2×) are per page output
+  settings; *Balanced + constant quality* produces exactly the 2.0 arguments.
+* Editor jobs are `JobSpec`s with `edit: Some(EditJob)` on the same runner thread (queued,
+  cancellable, progress via ffmpeg `-progress <file>`). Outputs go next to the source as
+  `<name>_edited.<ext>` (auto-numbered, never overwritten) and are recorded in the history with
+  `edited = true` ("✂ Edited" on the Outputs page). Crop rectangles are always even and inside
+  the frame; image crops are defined on the rotated/flipped view (ops order: rotate → flip →
+  crop). Images keep their ICC profile and EXIF when the format supports it; EXIF is dropped
+  when the source had its own orientation tag (it is baked into the pixels instead). Undo/redo
+  coalesces drags and typing into one step; a clip removed from the join list can't be undone.
+* Selection playback in the editor decodes at most 20 s at ≤ 960x540 into memory and reuses
+  `SamplePlayer` in a new single-view mode (audio is the clock, as in the sample preview).

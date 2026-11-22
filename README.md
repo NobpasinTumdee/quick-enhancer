@@ -8,6 +8,10 @@ entirely on your PC:
 * **Sharpen / denoise** (CAS, unsharp mask, edge-preserving bilateral denoise)
 * Before / After **preview** with a wipe slider, side-by-side and a **sample clip player with
   sound** (per-side FPS and resolution)
+* Separate **Video** and **Image** pages (plus the classic All-in-one page), named **profiles**
+  per page, and a simple **Editor** (trim, crop, join, rotate)
+* **Resource-aware** settings: live temp-disk / RAM / VRAM / time estimates with warnings and
+  "Fix automatically", a 20–60 s **benchmark** and **auto-tune** for your PC
 * **Outputs** tab: browse, compare, open or delete everything you made
 * English and **Thai (ไทย)** interface, switchable live
 * Explicit GPU / CPU and video-encoder choice (NVENC / AMF / QSV / x264 / x265 / SVT-AV1), live
@@ -113,7 +117,53 @@ profile whose model is missing is greyed out with a tooltip naming the file.
    processing time), **Open**, **Show in Explorer**, **Compare with source** and **Delete** (to the
    Recycle Bin, after confirmation). Missing files are marked and can be removed from the list.
 
-### Profiles
+### Pages
+
+* **All-in-one** — every option on one page (the 2.0 layout).
+* **Video** / **Image** — only the options for that kind of file, in processing order, each
+  section with an on/off switch; *Simple* hides the expert knobs, *Advanced* shows them. The
+  summary line under the title shows what the selected file will become
+  (`1920×1080 · 30 fps → 3840×2160 · 60 fps · NVENC HEVC · est. temp · est. time`). The Image page
+  has **Restore at original size** (AI clean-up without enlarging) and a **local contrast**
+  slider. Each page keeps its own files and settings; all jobs share one queue, which shows the
+  page each job came from.
+* **Editor** — trim (Fast: keyframe cut, no re-encode; Accurate: frame-exact re-encode), crop
+  (drag the handles, aspect presets, numeric x/y/w/h), join clips (drag to reorder, trim each
+  clip; lossless when all clips match, otherwise letterboxed to the first clip), crop / rotate /
+  flip images. Ctrl+Z / Ctrl+Y undo and redo; I / O set In / Out; ← → step one frame. Results are
+  saved next to the source as `<name>_edited.<ext>`, appear in Outputs as "✂ Edited", and
+  **Send to Video/Image page** queues them for enhancement.
+* **Settings** — Performance (Simple / Advanced), language, updates, tools, paths.
+
+### Saved settings profiles
+
+The profile bar on each page loads a built-in or your own profile. **Save** overwrites your
+loaded profile, **Save as… / Duplicate** create a new one, **☆ Default** loads it on that page
+every time the app starts, **Revert** undoes changes (a `*` shows the profile was modified).
+Profiles are stored one file per profile in `<data>\profiles\` and can be **exported /
+imported** as `.toml`. Performance values (tile, chunk, RAM, threads, temp folder) belong to the
+PC and are saved in a profile only when *Include performance settings* is ticked; an imported
+profile with values too high for this PC offers **Adjust to this PC**.
+
+### Resources, benchmark and auto-tune
+
+The *Resources* section of each page (and Settings → Performance) estimates for the selected
+file: temp disk per chunk and at peak (2 chunks; calibrated from the real PNG sizes written so
+far), RAM, VRAM, CPU threads and processing time (after a benchmark), next to what this PC has.
+Problems are shown inline as warnings (yellow: e.g. RAM budget over 60 % of RAM, temp over 80 %
+of free space, tile above the VRAM-safe size, all cores used, temp folder on an HDD, output FPS
+above the monitor's refresh rate) or blocking errors (red: not enough temp space or RAM, invalid
+folder, encoder unavailable). **Fix automatically** changes only performance settings. The same
+check runs when you press *Start queue*. While a video runs, it pauses if the temp drive gets
+too full and continues by itself when space is freed.
+
+**Benchmark this PC** (Settings, ~20–60 s, cancellable) measures Real-ESRGAN at tiles
+128/192/256, RIFE, the CPU filters, PNG writing and the encoder on built-in test frames and
+stores the result per GPU. **Auto-tune for this PC** then picks the tile, ncnn `-j`, threads,
+RAM budget and a chunk size with enough GPU work per chunk that fits the temp drive, and lists
+what it changed.
+
+### Upscale profiles
 
 | Profile | Engine / model |
 |---|---|
@@ -150,6 +200,9 @@ Order: **denoise → (interpolate) → upscale → resize → sharpen**. CAS (st
   | Max | auto (from VRAM) | 2:4:4 | all − 1 | Above normal |
 
   *Auto* tile derives from free VRAM (≥ 3 GB → 256, ≥ 1.5 GB → 200, ≥ 0.7 GB → 128, else 64). It is capped at 256 because bigger tiles of the heavy x4plus model can keep the GPU busy long enough for Windows to reset the driver (TDR, "device lost"). If ncnn fails or reports a Vulkan error, the chunk is retried with half the tile size (down to 32) and the smaller size is kept for the rest of the job; a lost device stops the tool immediately and waits for the driver to recover before retrying. Priorities are applied to the child processes with `SetPriorityClass`.
+* **Encoder preset / rate control:** Fast / Balanced / Quality maps to each encoder's preset
+  (NVENC p3/p5/p7, x264/x265 fast/medium/slow, …); *Bitrate* switches from constant quality to
+  average bitrate with a peak cap.
 * **Encoders:** detected at startup with `ffmpeg -encoders` **and** a 1-frame test encode each (an encoder can be listed but unusable, e.g. NVENC without an NVIDIA GPU). Unusable ones are greyed out with the reason. *Auto* prefers HEVC NVENC → AMF → QSV, then H.264 hardware, then libx265/libx264/SVT-AV1. Quality is CQ (NVENC), QP (AMF), global_quality (QSV) or CRF (software) with per-encoder defaults.
 
 ### How the video pipeline bounds RAM and disk
@@ -167,7 +220,7 @@ Audio is copied when the container allows it (otherwise AAC), text subtitles are
 
 ## Output
 
-Default: next to the source as `<name>_enhanced.<ext>`; or a chosen folder. If the file exists: ask / skip / auto-rename / overwrite. Images: PNG, JPG (quality), WebP (lossless) or same as source; alpha channels are preserved (resized with Lanczos, AI runs on RGB). Videos: MP4 or MKV.
+Default: next to the source as `<name><suffix>.<ext>` (suffix `_enhanced`, changeable per page); or a chosen folder. If the file exists: ask / skip / auto-rename / overwrite. Images: PNG, JPG (quality), WebP (lossless) or same as source; alpha channels are preserved (resized with Lanczos, AI runs on RGB). Videos: MP4 or MKV.
 
 ## Tests
 
@@ -176,7 +229,12 @@ cargo test                      # unit + integration tests
 cargo test -- --ignored         # also the network / real-archive tests (see docs/BUILDING.md)
 ```
 
-Unit tests cover ffprobe JSON parsing, scale / target-resolution math, FPS planning, the chunk planner, scene-cut detection and slot filling, CAS / unsharp / denoise on synthetic images, resizing, preset → settings mapping, tile retry, encoder detection parsing and mux arguments. Integration tests (`tests/pipeline_filters.rs`) generate test videos with `ffmpeg -f lavfi -i testsrc` and run the real pipeline (filters only; cancel + cleanup; image with alpha; and — if the ncnn tools, models and a Vulkan GPU are present — Real-ESRGAN + RIFE with a scene cut). They are skipped when `bin/ffmpeg` is missing. v2 adds tests for i18n key parity (every key in both languages, every `t!` key used in the code exists), history merge/de-dup, version comparison, `latest.json` / `tools.json` parsing, SHA-256 verification and safe extraction, data-folder resolution (installed / portable / override / migration) and the audio-clock ↔ video-frame mapping of the sample player.
+Unit tests cover ffprobe JSON parsing, scale / target-resolution math, FPS planning, the chunk planner, scene-cut detection and slot filling, CAS / unsharp / denoise on synthetic images, resizing, preset → settings mapping, tile retry, encoder detection parsing and mux arguments. Integration tests (`tests/pipeline_filters.rs`) generate test videos with `ffmpeg -f lavfi -i testsrc` and run the real pipeline (filters only; cancel + cleanup; image with alpha; and — if the ncnn tools, models and a Vulkan GPU are present — Real-ESRGAN + RIFE with a scene cut). They are skipped when `bin/ffmpeg` is missing. v2.1 adds tests for the resource estimator and validation rules (fixed numbers), auto-tune,
+profile storage (create / rename / duplicate / delete / reload, unknown and missing fields),
+encoder preset/bitrate arguments, the local-contrast filter and the Editor's ffmpeg arguments
+(fast/accurate trim, even crop, concat compatibility and filter graph, time parse/format);
+`tests/editor_real.rs` runs trims, crops and both kinds of joins with the real ffmpeg and
+`tests/bench_real.rs` (`--ignored`) benchmarks the real GPU. v2 adds tests for i18n key parity (every key in both languages, every `t!` key used in the code exists), history merge/de-dup, version comparison, `latest.json` / `tools.json` parsing, SHA-256 verification and safe extraction, data-folder resolution (installed / portable / override / migration) and the audio-clock ↔ video-frame mapping of the sample player.
 
 ## Known limitations
 
@@ -191,4 +249,9 @@ Unit tests cover ffprobe JSON parsing, scale / target-resolution math, FPS plann
 * The installer and exe are **not code-signed** until you add a certificate, so Windows SmartScreen shows a warning on first run (see docs/RELEASING.md).
 * Preview audio needs an output audio device; without one the sample plays silently.
 * The Outputs tab scans the output folder only when one is set; with "next to source" it shows the history only.
+* The Editor's **Fast** trim cuts at the keyframe before the In point, so it may start a little
+  early (use *Accurate* for frame-exact cuts). Selection playback plays at most the first 20 s.
+* Editor exports are written next to the source (not to the page's output folder).
+* Removing a clip from the join list can't be undone.
+* Time estimates need a benchmark; the VRAM estimate is a heuristic per model and tile size.
 * **Licensing:** FFmpeg "gpl" builds include x264/x265 and are GPL-licensed; Real-ESRGAN and RIFE ncnn binaries/models carry their own licenses (BSD-3 / MIT). This app runs them as separate programs and does not bundle them.

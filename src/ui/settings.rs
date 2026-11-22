@@ -234,7 +234,7 @@ pub fn framegen(app: &mut App, ui: &mut egui::Ui) {
                 });
             ui.end_row();
             ui.label(t!("settings.scene_cuts"));
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 ui.checkbox(&mut s.scene_detect, t!("settings.detect"));
                 ui.add_enabled(
                     s.scene_detect,

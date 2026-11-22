@@ -545,10 +545,10 @@ pub fn editor_page(app: &mut App, ui: &mut egui::Ui) {
             }
             ui.separator();
             let ed = &mut app.editor;
-            if ui.add_enabled(!ed.undo.is_empty(), egui::Button::new("↶")).on_hover_text(t!("editor.undo")).clicked() {
+            if ui.add_enabled(!ed.undo.is_empty(), egui::Button::new(t!("editor.undo_short"))).on_hover_text(t!("editor.undo")).clicked() {
                 ed.undo();
             }
-            if ui.add_enabled(!ed.redo.is_empty(), egui::Button::new("↷")).on_hover_text(t!("editor.redo")).clicked() {
+            if ui.add_enabled(!ed.redo.is_empty(), egui::Button::new(t!("editor.redo_short"))).on_hover_text(t!("editor.redo")).clicked() {
                 ed.redo();
             }
         });
