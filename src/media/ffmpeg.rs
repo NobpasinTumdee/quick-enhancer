@@ -141,6 +141,8 @@ pub struct EncodeSpec {
     pub fps: Rational,
     pub encoder: VideoEncoder,
     pub quality: Option<u32>,
+    pub speed: crate::config::EncoderSpeed,
+    pub bitrate_kbps: Option<u32>,
     pub container: Container,
     pub output: PathBuf,
     pub mux: Option<MuxSource>,
@@ -239,7 +241,7 @@ impl Encoder {
         if let Some(m) = &spec.mux {
             a.extend(mux_args(spec.container, m));
         }
-        a.extend(spec.encoder.args(spec.quality));
+        a.extend(spec.encoder.args_with(spec.quality, spec.speed, spec.bitrate_kbps));
         if spec.container == Container::Mp4 {
             if spec.encoder.codec() == Codec::Hevc {
                 a.push("-tag:v".into());
@@ -484,6 +486,8 @@ mod tests {
             fps: Rational::new(60000, 1001),
             encoder: VideoEncoder::HevcNvenc,
             quality: None,
+            speed: Default::default(),
+            bitrate_kbps: None,
             container: Container::Mp4,
             output: "out.mp4".into(),
             mux: Some(src(&["aac"], &[])),

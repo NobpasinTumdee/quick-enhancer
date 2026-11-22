@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use crate::config::{EncoderChoice, Priority};
+use crate::config::{EncoderChoice, EncoderSpeed, Priority};
 use crate::util::{new_command, run_capture};
 
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
@@ -147,8 +147,59 @@ impl VideoEncoder {
         }
     }
 
-    /// Codec + rate-control args for `-c:v`.
+    /// Codec + rate-control args for `-c:v` (balanced preset, constant quality).
     pub fn args(self, quality: Option<u32>) -> Vec<String> {
+        self.args_with(quality, EncoderSpeed::Balanced, None)
+    }
+
+    /// Codec args with a speed preset and optional average bitrate (kbit/s).
+    pub fn args_with(self, quality: Option<u32>, speed: EncoderSpeed, bitrate_kbps: Option<u32>) -> Vec<String> {
+        let mut a = self.quality_args(quality);
+        let preset = |fast: &str, bal: &str, best: &str| -> String {
+            match speed {
+                EncoderSpeed::Fast => fast.into(),
+                EncoderSpeed::Balanced => bal.into(),
+                EncoderSpeed::Quality => best.into(),
+            }
+        };
+        let (key, value) = match self {
+            VideoEncoder::H264Nvenc | VideoEncoder::HevcNvenc | VideoEncoder::Av1Nvenc => ("-preset", preset("p3", "p5", "p7")),
+            VideoEncoder::H264Amf | VideoEncoder::HevcAmf | VideoEncoder::Av1Amf => ("-quality", preset("speed", "quality", "quality")),
+            VideoEncoder::H264Qsv | VideoEncoder::HevcQsv | VideoEncoder::Av1Qsv => ("-preset", preset("fast", "slower", "veryslow")),
+            VideoEncoder::Libx264 | VideoEncoder::Libx265 => ("-preset", preset("fast", "medium", "slow")),
+            VideoEncoder::LibSvtAv1 => ("-preset", preset("10", "8", "5")),
+        };
+        if let Some(i) = a.iter().position(|x| x == key) {
+            a[i + 1] = value;
+        }
+        if let Some(kbps) = bitrate_kbps.filter(|b| *b > 0) {
+            // Drop the constant-quality knobs and use average bitrate with a peak cap.
+            for k in ["-cq", "-crf", "-global_quality", "-qp_i", "-qp_p", "-qp_b", "-b:v"] {
+                while let Some(i) = a.iter().position(|x| x == k) {
+                    a.drain(i..i + 2);
+                }
+            }
+            if let Some(i) = a.iter().position(|x| x == "-rc") {
+                a[i + 1] = match self {
+                    VideoEncoder::H264Amf | VideoEncoder::HevcAmf | VideoEncoder::Av1Amf => "vbr_peak".into(),
+                    _ => "vbr".into(),
+                };
+            }
+            let at = a.iter().position(|x| x == "-pix_fmt").unwrap_or(a.len());
+            let extra = [
+                "-b:v".to_string(),
+                format!("{kbps}k"),
+                "-maxrate".into(),
+                format!("{}k", kbps * 3 / 2),
+                "-bufsize".into(),
+                format!("{}k", kbps * 2),
+            ];
+            a.splice(at..at, extra);
+        }
+        a
+    }
+
+    fn quality_args(self, quality: Option<u32>) -> Vec<String> {
         let q = quality.unwrap_or(self.quality_range().0).to_string();
         let mut a: Vec<String> = vec!["-c:v".into(), self.ffmpeg_name().into()];
         let s = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
@@ -350,5 +401,20 @@ mod tests {
         assert!(a.windows(2).any(|w| w[0] == "-crf" && w[1] == "20"));
         let a = VideoEncoder::HevcNvenc.args(None);
         assert!(a.windows(2).any(|w| w[0] == "-cq" && w[1] == "23"));
+    }
+
+    #[test]
+    fn speed_and_bitrate_args() {
+        let a = VideoEncoder::HevcNvenc.args_with(None, EncoderSpeed::Quality, None).join(" ");
+        assert!(a.contains("-preset p7") && a.contains("-cq 23"), "{a}");
+        let a = VideoEncoder::HevcNvenc.args_with(None, EncoderSpeed::Fast, Some(8000)).join(" ");
+        assert!(a.contains("-preset p3") && a.contains("-b:v 8000k -maxrate 12000k -bufsize 16000k"), "{a}");
+        assert!(!a.contains("-cq") && a.ends_with("-pix_fmt yuv420p"), "{a}");
+        let a = VideoEncoder::Libx264.args_with(Some(20), EncoderSpeed::Fast, None).join(" ");
+        assert!(a.contains("-preset fast -crf 20"), "{a}");
+        let a = VideoEncoder::HevcAmf.args_with(None, EncoderSpeed::Balanced, Some(5000)).join(" ");
+        assert!(a.contains("-rc vbr_peak") && !a.contains("-qp_i"), "{a}");
+        // Default = 2.0 behaviour.
+        assert_eq!(VideoEncoder::Libx265.args(None), VideoEncoder::Libx265.args_with(None, EncoderSpeed::Balanced, None));
     }
 }

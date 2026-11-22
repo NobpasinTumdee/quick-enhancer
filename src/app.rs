@@ -218,6 +218,13 @@ pub struct App {
     pub outputs_dirty: bool,
     pub profiles: crate::profiles::ProfileStore,
     pub profile_dialog: Option<crate::ui::profiles::ProfileDialog>,
+    pub bench: crate::bench::BenchStore,
+    pub bench_run: Option<crate::bench::BenchRun>,
+    pub bench_offer: bool,
+    pub tune_report: Option<Vec<crate::resources::Change>>,
+    pub preflight: Option<crate::ui::perf::Preflight>,
+    sys_info: crate::resources::SystemInfo,
+    sys_at: Instant,
 }
 
 /// Noto Sans Thai (SIL OFL 1.1, see licenses/NotoSansThai-OFL.txt): egui's bundled fonts
@@ -320,6 +327,7 @@ impl App {
         let (history_tx, history_rx) = unbounded();
 
         let profiles_dir = paths.data.join("profiles");
+        let bench_file = crate::bench::store_file(&paths.data);
         let tools_only = start.install_tools;
         // Missing tools: open the downloader (the setup check stays available).
         // An update may pin newer tool versions: offer the re-download (only components
@@ -372,7 +380,15 @@ impl App {
             outputs_dirty: true,
             profiles: crate::profiles::ProfileStore::load(&profiles_dir),
             profile_dialog: None,
+            bench: crate::bench::BenchStore::load(&bench_file),
+            bench_run: None,
+            bench_offer: false,
+            tune_report: None,
+            preflight: None,
+            sys_info: Default::default(),
+            sys_at: Instant::now(),
         };
+        app.refresh_sys();
         crate::ui::profiles::apply_defaults(&mut app);
         app.sync_monitor_gpu();
         if tools_only || missing_tools {
@@ -589,7 +605,102 @@ impl App {
         Some(dir.join(format!("{stem}{}.{ext}", s.safe_suffix())))
     }
 
+    /// Cached system info for estimates (refreshed every few seconds in `pump`).
+    pub fn sys(&self) -> &crate::resources::SystemInfo {
+        &self.sys_info
+    }
+
+    pub fn refresh_sys(&mut self) {
+        self.sys_info = crate::resources::gather(&self.env, &self.config.machine);
+        self.sys_at = Instant::now();
+    }
+
+    /// Snapshot for `settings::after_edit`.
+    pub fn cur_and_machine(&self) -> (JobSettings, crate::config::MachineSettings) {
+        (self.cur_settings().clone(), self.config.machine.clone())
+    }
+
+    pub fn start_benchmark(&mut self) {
+        if self.bench_run.is_some() || self.runner.is_busy() {
+            return;
+        }
+        self.preview.cancel();
+        self.bench_run = Some(crate::bench::BenchRun::start(
+            self.env.clone(),
+            self.config.machine.clone(),
+            self.egui_ctx.clone(),
+        ));
+    }
+
+    fn pump_bench(&mut self) {
+        let Some(run) = &self.bench_run else {
+            return;
+        };
+        let Ok(res) = run.done.try_recv() else {
+            return;
+        };
+        self.bench_run = None;
+        match res {
+            Ok(r) => {
+                self.bench.put(r);
+                if let Err(e) = self.bench.save(&crate::bench::store_file(&self.paths.data)) {
+                    tracing::warn!("saving benchmark failed: {e}");
+                }
+                self.toast(t!("perf.bench_done"));
+                crate::ui::perf::auto_tune(self);
+            }
+            Err(e) => self.toast(t!("perf.bench_failed", error = e)),
+        }
+    }
+
+    /// Pre-start check: every pending item of the active page is validated first.
     pub fn start_queue(&mut self) {
+        self.refresh_sys();
+        let infos: Vec<crate::media::probe::MediaInfo> = self
+            .ws
+            .items
+            .iter()
+            .filter(|i| matches!(i.status, ItemStatus::Pending | ItemStatus::Failed | ItemStatus::Cancelled))
+            .filter_map(|i| i.info.clone())
+            .collect();
+        let mut issues: Vec<crate::resources::Issue> = Vec::new();
+        for info in &infos {
+            if let Some((_, _, v)) = crate::ui::perf::issues_for(self, info) {
+                for i in v {
+                    if !issues.iter().any(|x| x.field == i.field && x.message == i.message) {
+                        issues.push(i);
+                    }
+                }
+            }
+        }
+        // Informational warnings that don't need a decision.
+        issues.retain(|i| i.field != crate::resources::Field::Fps);
+        if issues.is_empty() {
+            self.start_queue_checked();
+        } else {
+            issues.sort_by_key(|i| std::cmp::Reverse(i.level));
+            self.preflight = Some(crate::ui::perf::Preflight { issues });
+        }
+    }
+
+    /// "Fix automatically" from the pre-start dialog, then check again.
+    pub fn fix_preflight(&mut self, issues: &[crate::resources::Issue]) {
+        let info = self
+            .ws
+            .items
+            .iter()
+            .filter(|i| matches!(i.status, ItemStatus::Pending | ItemStatus::Failed | ItemStatus::Cancelled))
+            .filter_map(|i| i.info.clone())
+            .max_by_key(|i| i.width as u64 * i.height as u64 * i.frames.unwrap_or(1));
+        let input = info.and_then(|info| crate::ui::perf::estimate_for(self, &info).map(|x| x.0));
+        if let Some(i) = input {
+            crate::ui::perf::apply_fix(self, &i, issues);
+        }
+        self.start_queue();
+    }
+
+    /// Start without the resource check (after it passed or "Start anyway").
+    pub fn start_queue_checked(&mut self) {
         let mut jobs = Vec::new();
         let mut conflicts = Vec::new();
         let mut used: HashSet<PathBuf> = HashSet::new();
@@ -795,6 +906,10 @@ impl App {
     // ---- event pumping ----------------------------------------------------------------
 
     fn pump(&mut self, ctx: &egui::Context) {
+        self.pump_bench();
+        if self.sys_at.elapsed() > Duration::from_secs(3) {
+            self.refresh_sys();
+        }
         while let Ok(p) = self.probe_rx.try_recv() {
             if let Some(item) = self.ws.items.iter_mut().find(|i| i.id == p.id) {
                 match p.result {
@@ -1062,6 +1177,9 @@ impl App {
         self.outputs_dirty = true;
         self.env = env;
         self.toast(t!("tools.reloaded"));
+        if !self.config.bench_offered && self.env.tools.realesrgan.is_some() && !self.env.gpus.is_empty() {
+            self.bench_offer = true;
+        }
     }
 
     /// Outputs page → "Compare with source": switch to the queue and show the exported
@@ -1288,6 +1406,8 @@ impl eframe::App for App {
         crate::ui::update::update_window(self, &ctx);
         crate::ui::update::optin_modal(self, &ctx);
         crate::ui::fonttest::font_test_window(self, &ctx);
+        crate::ui::perf::preflight_window(self, &ctx);
+        crate::ui::perf::bench_offer_window(self, &ctx);
         crate::ui::overwrite_window(self, &ctx);
         crate::ui::toasts(self, &ctx);
         crate::ui::drop_hint(&ctx);

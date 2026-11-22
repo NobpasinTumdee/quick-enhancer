@@ -226,6 +226,7 @@ pub fn run_video(
     let work = TempDir::new(&root, &format!("vid{}", spec.id))?;
     let disk_mode = plan.needs_disk() || interp.is_some();
     let chunk_frames = s.video.chunk_frames.max(8);
+    let mut chunk_need = 0u64;
     if disk_mode {
         let (mw, mh) = plan.model_dims();
         let need = estimate_temp_bytes(
@@ -237,6 +238,9 @@ pub fn run_video(
             k,
             plan.needs_disk(),
         );
+        // One fully expanded chunk (without the next chunk's source frames).
+        let src_only = estimate_temp_bytes(info.width, info.height, 0, 0, chunk_frames, 1, false) / 2;
+        chunk_need = need.saturating_sub(src_only);
         if let Some(free) = free_space(work.path())
             && free < need + 512 * MB
         {
@@ -260,6 +264,8 @@ pub fn run_video(
         fps: fps.out_fps,
         encoder,
         quality: s.output.quality,
+        speed: s.output.encoder_speed,
+        bitrate_kbps: s.output.bitrate_kbps,
         container: s.output.container,
         output: part.clone(),
         mux: Some(MuxSource {
@@ -356,6 +362,7 @@ pub fn run_video(
                     &chunk_tx,
                     &raw_tx,
                     &tok_rx,
+                    chunk_need,
                 );
                 if r.is_err() {
                     stop.cancel();
@@ -492,6 +499,7 @@ fn decode_loop(
     chunk_tx: &Sender<ChunkMsg>,
     raw_tx: &Sender<RgbImage>,
     tok_rx: &Receiver<()>,
+    chunk_need: u64,
 ) -> Result<u64, PipelineError> {
     let mut dec = Decoder::spawn(ffmpeg, dspec, priority)?;
     let mut detector = scene_threshold.map(SceneDetector::new);
@@ -575,6 +583,7 @@ fn decode_loop(
             if recv_checked(tok_rx, stop).is_none() {
                 return Err(PipelineError::Cancelled);
             }
+            wait_for_space(work, chunk_need, progress, stop)?;
             let dir = work.join(format!("chunk{next_index:05}")).join("src");
             std::fs::create_dir_all(&dir)?;
             cur = Some(Building {
@@ -613,6 +622,37 @@ fn decode_loop(
         PipelineError::Proc(e)
     })?;
     Ok(g)
+}
+
+/// Pause (don't fail) while the temp drive has less free space than the next chunk needs.
+fn wait_for_space(work: &Path, need: u64, progress: &ProgressHandle, stop: &CancelToken) -> Result<(), PipelineError> {
+    if need == 0 {
+        return Ok(());
+    }
+    let mut paused = false;
+    while let Some(free) = free_space(work)
+        && free < need + 256 * MB
+    {
+        if stop.is_cancelled() {
+            return Err(PipelineError::Cancelled);
+        }
+        if !paused {
+            tracing::warn!("temp space low ({free} B free, {need} B needed): pausing");
+            paused = true;
+        }
+        let msg = crate::t!(
+            "status.paused_disk",
+            free = crate::util::human_bytes(free),
+            need = crate::util::human_bytes(need)
+        );
+        progress.update(|p| p.detail = msg.clone());
+        std::thread::sleep(std::time::Duration::from_secs(2));
+    }
+    if paused {
+        tracing::info!("temp space available again: resuming");
+        progress.update(|p| p.detail = String::new());
+    }
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]

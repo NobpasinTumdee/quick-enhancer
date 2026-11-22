@@ -268,10 +268,10 @@ pub fn safe_ram_budget(sys: &SystemInfo) -> u64 {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
-    pub fn pc() -> SystemInfo {
+    pub(crate) fn pc() -> SystemInfo {
         SystemInfo {
             cores: 16,
             ram_total: 32 * GB,
@@ -333,4 +333,530 @@ mod tests {
         let i = machine_issues(&sys, &MachineSettings::default());
         assert!(i.iter().any(|i| i.field == Field::TempDir && i.level == Level::Warn));
     }
+}
+
+// ---- estimator ---------------------------------------------------------------------------
+
+/// Everything the estimator needs about one input + recipe (built by [`input_for`]).
+#[derive(Clone, Debug, PartialEq)]
+pub struct EstimateInput {
+    pub video: bool,
+    pub src_w: u32,
+    pub src_h: u32,
+    /// Source frames to process (1 for images).
+    pub frames: u64,
+    /// Frame-generation multiplier (1 = off).
+    pub k: u32,
+    /// AI upscale stage runs (frames go to disk).
+    pub ai: bool,
+    /// x4plus-class (heavy) model vs. compact animevideo model.
+    pub heavy: bool,
+    pub model_w: u32,
+    pub model_h: u32,
+    pub out_w: u32,
+    pub out_h: u32,
+    pub out_fps: f64,
+}
+
+/// Effective performance values the estimate is computed for.
+#[derive(Clone, Debug, PartialEq)]
+pub struct EstimateMachine {
+    pub chunk_frames: u32,
+    pub ram_budget: u64,
+    pub filter_threads: usize,
+    pub tile: u32,
+    pub procs: u32,
+}
+
+impl EstimateMachine {
+    pub fn of(s: &JobSettings, cores: usize, vram_free: Option<u64>) -> EstimateMachine {
+        let r = effective_resources(s, cores);
+        EstimateMachine {
+            chunk_frames: s.video.chunk_frames.max(8),
+            ram_budget: s.video.ram_budget_mb.max(256) as u64 * MB,
+            filter_threads: r.filter_threads,
+            tile: crate::pipeline::plan::resolve_tile(&r, vram_free),
+            procs: procs_of(&r.jobs),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Estimate {
+    /// Frames go through temp PNG folders.
+    pub disk_mode: bool,
+    pub temp_per_chunk: u64,
+    /// Peak temp use (2 chunks on disk).
+    pub temp_total: u64,
+    pub ram: u64,
+    pub vram: Option<u64>,
+    pub threads: usize,
+    pub out_frames: u64,
+    pub chunks: u64,
+    /// `None` = no benchmark yet.
+    pub time_secs: Option<f64>,
+}
+
+/// PNG bytes for a frame (`ratio` = PNG size / raw RGB size).
+pub fn png_bytes(w: u32, h: u32, ratio: f64) -> u64 {
+    (w as f64 * h as f64 * 3.0 * ratio) as u64
+}
+
+/// Same queue sizing as `video_job::run_video`.
+fn queue_caps(budget: u64, src_bytes: u64, out_bytes: u64, threads: usize) -> (u64, u64, u64) {
+    let writer = (budget / 4 / out_bytes.max(1)).clamp(2, 32);
+    let batch = (budget / 4 / out_bytes.max(1)).clamp(1, threads.max(2) as u64);
+    let raw = (budget / 4 / src_bytes.max(1)).clamp(2, 32);
+    (writer, batch, raw)
+}
+
+pub fn estimate(i: &EstimateInput, m: &EstimateMachine, png_ratio: f64, bench: Option<&BenchResult>) -> Estimate {
+    let src_bytes = i.src_w as u64 * i.src_h as u64 * 3;
+    let model_bytes = i.model_w as u64 * i.model_h as u64 * 3;
+    let out_bytes = i.out_w as u64 * i.out_h as u64 * 3;
+    let k = i.k.max(1) as u64;
+    let mut e = Estimate {
+        threads: m.filter_threads,
+        out_frames: i.frames.max(1) * k,
+        ..Default::default()
+    };
+    if i.video {
+        e.disk_mode = i.ai || k > 1;
+        let n = (m.chunk_frames as u64).min(i.frames.max(1)) + 1;
+        e.chunks = i.frames.max(1).div_ceil(m.chunk_frames.max(1) as u64);
+        if e.disk_mode {
+            let src_png = png_bytes(i.src_w, i.src_h, png_ratio);
+            let interp = if k > 1 { src_png * n * k } else { 0 };
+            let up = if i.ai { png_bytes(i.model_w, i.model_h, png_ratio) * n * k } else { 0 };
+            e.temp_per_chunk = src_png * n + interp + up;
+            e.temp_total = e.temp_per_chunk * CHUNKS_ON_DISK.min(e.chunks.max(1));
+        }
+        let (writer, batch, raw) = queue_caps(m.ram_budget, src_bytes, out_bytes, m.filter_threads);
+        e.ram = writer * out_bytes + raw * src_bytes + batch * (model_bytes + out_bytes) + 400 * MB;
+    } else {
+        e.disk_mode = i.ai;
+        e.chunks = 1;
+        if i.ai {
+            e.temp_per_chunk = png_bytes(i.src_w, i.src_h, png_ratio) + png_bytes(i.model_w, i.model_h, png_ratio);
+            e.temp_total = e.temp_per_chunk;
+        }
+        e.ram = src_bytes * 2 + model_bytes * 2 + out_bytes * 2 + 300 * MB;
+    }
+    let up = i.ai.then(|| esrgan_vram(m.tile, i.heavy, m.procs));
+    let rife = (k > 1).then(|| rife_vram(i.src_w, i.src_h, i.src_w.min(i.src_h) >= 1440));
+    e.vram = match (up, rife) {
+        (Some(a), Some(b)) => Some(a.max(b)),
+        (a, b) => a.or(b),
+    };
+    e.time_secs = bench.map(|b| estimate_time(i, m, &e, b));
+    e
+}
+
+fn estimate_time(i: &EstimateInput, m: &EstimateMachine, e: &Estimate, b: &BenchResult) -> f64 {
+    let src_mp = i.src_w as f64 * i.src_h as f64 / 1e6;
+    let out_mp = i.out_w as f64 * i.out_h as f64 / 1e6;
+    let frames = e.out_frames as f64;
+    let mut t = 0.0;
+    if i.ai {
+        let factor = if i.heavy { 1.0 } else { 0.3 };
+        t += frames * src_mp * b.esrgan_ms_per_mp(m.tile) * factor / 1000.0;
+        t += b.esrgan_startup_s * e.chunks as f64;
+    }
+    if i.k > 1 {
+        t += frames * src_mp * b.rife_ms_per_mp.unwrap_or(40.0) / 1000.0;
+        t += b.esrgan_startup_s * e.chunks as f64;
+    }
+    // CPU stages run in parallel with the GPU; count the part that exceeds it.
+    let cpu = frames * out_mp * b.filter_ms_per_mp / 1000.0 * (16.0 / m.filter_threads.max(1) as f64).max(1.0) / 4.0;
+    if i.video {
+        let enc = b.encode_fps_720p.unwrap_or(120.0) * (0.92 / out_mp.max(0.05));
+        let png = if e.disk_mode {
+            e.temp_per_chunk as f64 * e.chunks as f64 / (b.png_write_mb_s.max(20.0) * MB as f64)
+        } else {
+            0.0
+        };
+        t = t.max(frames / enc.max(1.0)) + png + cpu * 0.3;
+    } else {
+        t += cpu;
+    }
+    t.max(0.5)
+}
+
+// ---- validation --------------------------------------------------------------------------
+
+/// Extra context for job-level checks.
+#[derive(Clone, Debug, Default)]
+pub struct JobContext {
+    /// The chosen encoder is not usable (video only).
+    pub encoder_unavailable: Option<String>,
+    /// Output folder can't be created.
+    pub output_dir_invalid: Option<PathBuf>,
+}
+
+/// All issues for one job (machine checks included).
+pub fn validate(i: &EstimateInput, e: &Estimate, m: &MachineSettings, sys: &SystemInfo, ctx: &JobContext) -> Vec<Issue> {
+    let mut v = machine_issues(sys, m);
+    if let Some(free) = sys.temp_free
+        && e.temp_total > 0
+    {
+        if e.temp_total > free {
+            v.push(Issue::block(Field::TempSpace, t!("res.temp_over", need = hb(e.temp_total), free = hb(free)), true));
+        } else if e.temp_total as f64 > free as f64 * 0.8 {
+            v.push(Issue::warn(Field::TempSpace, t!("res.temp_high", need = hb(e.temp_total), free = hb(free)), true));
+        }
+    }
+    if sys.ram_available > 0 && e.ram > sys.ram_available {
+        v.push(Issue::block(Field::Ram, t!("res.ram_est_over", need = hb(e.ram), avail = hb(sys.ram_available)), true));
+    }
+    if let (Some(need), Some(free)) = (e.vram, sys.vram_free)
+        && need > free
+    {
+        v.push(Issue::warn(Field::Vram, t!("res.vram_high", need = hb(need), free = hb(free)), true));
+    }
+    if let Some(enc) = &ctx.encoder_unavailable {
+        v.push(Issue::block(Field::Encoder, t!("res.encoder_unavailable", enc = enc), true));
+    }
+    if let Some(d) = &ctx.output_dir_invalid {
+        v.push(Issue::block(Field::TempDir, t!("res.output_invalid", dir = d.display()), false));
+    }
+    if i.video
+        && let Some(hz) = sys.refresh_hz
+        && i.out_fps > hz as f64 + 0.5
+    {
+        v.push(Issue::warn(Field::Fps, t!("res.fps_over_refresh", fps = format!("{:.0}", i.out_fps), hz = hz), false));
+    }
+    v.sort_by_key(|i| std::cmp::Reverse(i.level));
+    v.dedup_by(|a, b| a.field == b.field && a.message == b.message);
+    v
+}
+
+/// Largest chunk size whose two chunks use at most `share` of the free temp space.
+pub fn chunk_that_fits(i: &EstimateInput, free: u64, png_ratio: f64, share: f64) -> Option<u32> {
+    let k = i.k.max(1) as u64;
+    let src_png = png_bytes(i.src_w, i.src_h, png_ratio);
+    let per_frame = src_png
+        + if k > 1 { src_png * k } else { 0 }
+        + if i.ai { png_bytes(i.model_w, i.model_h, png_ratio) * k } else { 0 };
+    if per_frame == 0 {
+        return None;
+    }
+    let n = (free as f64 * share / CHUNKS_ON_DISK as f64 / per_frame as f64).floor() as i64 - 1;
+    (n >= 16).then(|| (n.min(2000) as u32) / 8 * 8)
+}
+
+/// "Fix automatically": safe machine values + a chunk size that fits the temp drive.
+/// Returns the new machine settings and whether the encoder must be reset to Auto.
+pub fn fix_job(i: &EstimateInput, m: &MachineSettings, sys: &SystemInfo, issues: &[Issue], png_ratio: f64) -> (MachineSettings, bool) {
+    let mut f = fix_machine(sys, m);
+    let disk = issues.iter().any(|x| x.field == Field::TempSpace);
+    if disk
+        && let Some(free) = sys.temp_free
+        && let Some(c) = chunk_that_fits(i, free, png_ratio, 0.5)
+    {
+        f.chunk_frames = f.chunk_frames.min(c);
+    }
+    if issues.iter().any(|x| x.field == Field::Vram) {
+        let safe = vram_safe_tile(sys.vram_free, i.heavy, 1);
+        f.tile_override = Some(TileSize::Fixed(safe.min(128)));
+        f.jobs_override = Some("1:1:2".into());
+    }
+    if issues.iter().any(|x| x.field == Field::Ram && x.level == Level::Block) {
+        f.ram_budget_mb = f.ram_budget_mb.min((safe_ram_budget(sys) / MB) as u32);
+    }
+    (f, issues.iter().any(|x| x.field == Field::Encoder))
+}
+
+// ---- benchmark results + auto-tune ------------------------------------------------------
+
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize, Default)]
+#[serde(default)]
+pub struct TileBench {
+    pub tile: u32,
+    pub ok: bool,
+    /// Real-ESRGAN (heavy model, 4x) milliseconds per source megapixel.
+    pub ms_per_mp: f64,
+}
+
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct BenchResult {
+    /// Identifies the device the numbers belong to.
+    pub device_key: String,
+    pub device_name: String,
+    pub created: i64,
+    pub app_version: String,
+    pub tiles: Vec<TileBench>,
+    pub esrgan_startup_s: f64,
+    /// RIFE ms per source megapixel per generated output frame.
+    pub rife_ms_per_mp: Option<f64>,
+    /// Denoise + CAS + resize, ms per output megapixel (all filter threads).
+    pub filter_ms_per_mp: f64,
+    pub png_write_mb_s: f64,
+    pub png_ratio: f64,
+    pub encoder: Option<String>,
+    pub encode_fps_720p: Option<f64>,
+}
+
+impl Default for BenchResult {
+    fn default() -> Self {
+        BenchResult {
+            device_key: String::new(),
+            device_name: String::new(),
+            created: 0,
+            app_version: env!("CARGO_PKG_VERSION").into(),
+            tiles: Vec::new(),
+            esrgan_startup_s: 1.5,
+            rife_ms_per_mp: None,
+            filter_ms_per_mp: 30.0,
+            png_write_mb_s: 200.0,
+            png_ratio: DEFAULT_PNG_RATIO,
+            encoder: None,
+            encode_fps_720p: None,
+        }
+    }
+}
+
+impl BenchResult {
+    /// ms/MP at `tile` (nearest measured tile; slow default when nothing was measured).
+    pub fn esrgan_ms_per_mp(&self, tile: u32) -> f64 {
+        self.tiles
+            .iter()
+            .filter(|t| t.ok && t.ms_per_mp > 0.0)
+            .min_by_key(|t| t.tile.abs_diff(tile))
+            .map(|t| t.ms_per_mp)
+            .unwrap_or(2500.0)
+    }
+    /// Fastest tile that worked.
+    pub fn best_tile(&self) -> Option<u32> {
+        self.tiles
+            .iter()
+            .filter(|t| t.ok && t.ms_per_mp > 0.0)
+            .min_by(|a, b| a.ms_per_mp.total_cmp(&b.ms_per_mp))
+            .map(|t| t.tile)
+    }
+}
+
+/// One line of "what auto-tune changed".
+#[derive(Clone, Debug, PartialEq)]
+pub struct Change {
+    pub what: String,
+    pub from: String,
+    pub to: String,
+}
+
+/// Choose tile / chunk / RAM / threads / `-j` for this PC. `typical` = the input to tune for
+/// (selected video, or 1080p 2x + frame generation). Returns the new settings + changes.
+pub fn auto_tune(sys: &SystemInfo, bench: Option<&BenchResult>, m: &MachineSettings, typical: &EstimateInput) -> (MachineSettings, Vec<Change>) {
+    let mut f = m.clone();
+    let cores = sys.cores.max(1) as u32;
+    // -j: proc threads double VRAM use; 2 only with plenty of free VRAM.
+    let vfree = sys.vram_free.or(sys.vram_total.map(|t| t * 8 / 10));
+    let load = if cores >= 8 { 2 } else { 1 };
+    let save = if cores >= 8 { 4 } else { 2 };
+    let mut tile = bench.and_then(|b| b.best_tile()).unwrap_or(200).min(MAX_AUTO_TILE);
+    let procs = if vfree.is_some_and(|v| esrgan_vram(tile, true, 2) as f64 <= v as f64 * 0.6) { 2 } else { 1 };
+    tile = tile.min(vram_safe_tile(vfree, true, procs));
+    f.tile_override = Some(TileSize::Fixed(tile));
+    f.jobs_override = Some(format!("{load}:{procs}:{save}"));
+    // ~75 % of the cores keeps the PC responsive while the GPU is the bottleneck anyway.
+    f.filter_threads_override = Some((cores * 3 / 4).clamp(1, cores.saturating_sub(1).max(1)));
+    f.ram_budget_mb = (safe_ram_budget(sys) / MB) as u32;
+    // Chunk: ≥ ~25 s of GPU work per chunk (amortises ncnn start-up), limited by disk.
+    let src_mp = typical.src_w as f64 * typical.src_h as f64 / 1e6;
+    let k = typical.k.max(1) as f64;
+    let per_src_frame_s = match bench {
+        Some(b) => {
+            let factor = if typical.heavy { 1.0 } else { 0.3 };
+            let up = if typical.ai { k * src_mp * b.esrgan_ms_per_mp(tile) * factor / 1000.0 } else { 0.0 };
+            let rife = if typical.k > 1 { k * src_mp * b.rife_ms_per_mp.unwrap_or(40.0) / 1000.0 } else { 0.0 };
+            (up + rife).max(0.005)
+        }
+        None => 0.2,
+    };
+    let mut chunk = (25.0 / per_src_frame_s).ceil().clamp(32.0, 1500.0) as u32;
+    let ratio = bench.map(|b| b.png_ratio).unwrap_or(DEFAULT_PNG_RATIO);
+    if let Some(free) = sys.temp_free {
+        chunk = match chunk_that_fits(typical, free, ratio, 0.4) {
+            Some(c) => chunk.min(c),
+            // Not even 16 frames fit: smallest chunk (the pre-start check will block).
+            None => 16,
+        };
+    }
+    f.chunk_frames = (chunk / 8 * 8).max(16);
+    let mut changes = Vec::new();
+    let mut note = |what: String, a: String, b: String| {
+        if a != b {
+            changes.push(Change { what, from: a, to: b });
+        }
+    };
+    let r0 = effective_resources(&JobSettings::default().with_machine(m), sys.cores);
+    let r1 = effective_resources(&JobSettings::default().with_machine(&f), sys.cores);
+    let tile_str = |r: &crate::pipeline::plan::Resources| match r.tile {
+        TileSize::Fixed(t) => t.to_string(),
+        TileSize::Auto => "Auto".into(),
+    };
+    note(t!("perf.tile_size"), tile_str(&r0), tile_str(&r1));
+    note("ncnn -j".into(), r0.jobs.clone(), r1.jobs.clone());
+    note(t!("perf.filter_threads"), r0.filter_threads.to_string(), r1.filter_threads.to_string());
+    note(t!("perf.ram_budget"), format!("{} MB", m.ram_budget_mb), format!("{} MB", f.ram_budget_mb));
+    note(t!("perf.chunk_size"), m.chunk_frames.to_string(), f.chunk_frames.to_string());
+    (f, changes)
+}
+
+#[cfg(test)]
+mod estimate_tests {
+    use super::tests::pc;
+    use super::*;
+
+    fn input_1080p(k: u32, ai: bool) -> EstimateInput {
+        EstimateInput {
+            video: true,
+            src_w: 1920,
+            src_h: 1080,
+            frames: 3000,
+            k,
+            ai,
+            heavy: true,
+            model_w: 7680,
+            model_h: 4320,
+            out_w: 3840,
+            out_h: 2160,
+            out_fps: 30.0 * k as f64,
+        }
+    }
+
+    fn mach() -> EstimateMachine {
+        EstimateMachine { chunk_frames: 120, ram_budget: 2048 * MB, filter_threads: 8, tile: 200, procs: 2 }
+    }
+
+    #[test]
+    fn temp_math_with_fixed_numbers() {
+        let i = input_1080p(2, true);
+        let e = estimate(&i, &mach(), 0.5, None);
+        // n = 121 frames; src 1920*1080*3*0.5 = 3_110_400 B
+        let src = 3_110_400u64;
+        let up = (7680u64 * 4320 * 3) / 2;
+        assert_eq!(e.temp_per_chunk, src * 121 + src * 121 * 2 + up * 121 * 2);
+        assert_eq!(e.temp_total, e.temp_per_chunk * 2);
+        assert_eq!(e.chunks, 25);
+        assert_eq!(e.out_frames, 6000);
+        assert!(e.time_secs.is_none());
+        // No AI, no frame gen → in memory.
+        let e = estimate(&input_1080p(1, false), &mach(), 0.5, None);
+        assert!(!e.disk_mode);
+        assert_eq!(e.temp_total, 0);
+        // RAM: writer = 512 MB / 24.9 MB → 21 frames, batch 8, raw 32 (capped).
+        let out = 3840u64 * 2160 * 3;
+        let src_b = 1920u64 * 1080 * 3;
+        let model = 7680u64 * 4320 * 3;
+        assert_eq!(e.ram, 21 * out + 32 * src_b + 8 * (model + out) + 400 * MB);
+    }
+
+    #[test]
+    fn validation_levels() {
+        let sys = pc();
+        let i = input_1080p(2, true);
+        let mut e = estimate(&i, &mach(), 0.5, None);
+        let m = MachineSettings::default();
+        let ctx = JobContext::default();
+        assert!(validate(&i, &e, &m, &sys, &ctx).iter().all(|x| x.level != Level::Block));
+        // 60 fps > 60 Hz? no; 120 fps > 60 Hz → warning.
+        let mut i2 = i.clone();
+        i2.out_fps = 120.0;
+        assert!(validate(&i2, &e, &m, &sys, &ctx).iter().any(|x| x.field == Field::Fps));
+        // Temp over 80 % of free → warn; over free → block.
+        e.temp_total = 170 * GB;
+        assert!(validate(&i, &e, &m, &sys, &ctx).iter().any(|x| x.field == Field::TempSpace && x.level == Level::Warn));
+        e.temp_total = 250 * GB;
+        let issues = validate(&i, &e, &m, &sys, &ctx);
+        assert_eq!(issues[0].level, Level::Block);
+        let (fixed, _) = fix_job(&i, &m, &sys, &issues, 0.5);
+        let e2 = estimate(&i, &EstimateMachine { chunk_frames: fixed.chunk_frames, ..mach() }, 0.5, None);
+        assert!(e2.temp_total <= 100 * GB, "{}", e2.temp_total);
+        // Encoder unavailable → blocking + encoder reset requested.
+        let ctx = JobContext { encoder_unavailable: Some("NVENC HEVC".into()), ..Default::default() };
+        let issues = validate(&i, &estimate(&i, &mach(), 0.5, None), &m, &sys, &ctx);
+        assert!(issues.iter().any(|x| x.field == Field::Encoder && x.level == Level::Block));
+        assert!(fix_job(&i, &m, &sys, &issues, 0.5).1);
+    }
+
+    #[test]
+    fn time_from_benchmark() {
+        let b = BenchResult {
+            tiles: vec![
+                TileBench { tile: 128, ok: true, ms_per_mp: 900.0 },
+                TileBench { tile: 256, ok: true, ms_per_mp: 700.0 },
+            ],
+            rife_ms_per_mp: Some(20.0),
+            encode_fps_720p: Some(300.0),
+            ..Default::default()
+        };
+        assert_eq!(b.best_tile(), Some(256));
+        assert_eq!(b.esrgan_ms_per_mp(200), 700.0);
+        let i = input_1080p(2, true);
+        let t = estimate(&i, &mach(), 0.5, Some(&b)).time_secs.unwrap();
+        // 6000 frames × 2.07 MP × 0.7 s ≈ 8700 s of upscaling alone.
+        assert!(t > 8000.0 && t < 20000.0, "{t}");
+    }
+
+    #[test]
+    fn auto_tune_is_sensible_for_a_16gb_gpu() {
+        let sys = pc();
+        let b = BenchResult {
+            tiles: vec![
+                TileBench { tile: 128, ok: true, ms_per_mp: 900.0 },
+                TileBench { tile: 192, ok: true, ms_per_mp: 800.0 },
+                TileBench { tile: 256, ok: true, ms_per_mp: 760.0 },
+            ],
+            rife_ms_per_mp: Some(15.0),
+            ..Default::default()
+        };
+        let i = input_1080p(2, true);
+        let (m, changes) = auto_tune(&sys, Some(&b), &MachineSettings::default(), &i);
+        assert_eq!(m.tile_override, Some(TileSize::Fixed(256)));
+        assert_eq!(m.jobs_override.as_deref(), Some("2:2:4"));
+        assert_eq!(m.filter_threads_override, Some(12));
+        assert_eq!(m.ram_budget_mb, 8192);
+        // 25 s / (2 × 2.07 MP × 0.775 s/MP) ≈ 8 → clamped to 32.
+        assert_eq!(m.chunk_frames, 32);
+        assert!(!changes.is_empty());
+        assert!(machine_issues(&sys, &m).is_empty(), "{:?}", machine_issues(&sys, &m));
+        // Small disk limits the chunk size.
+        let mut s2 = sys.clone();
+        s2.temp_free = Some(2 * GB);
+        let small = input_1080p(1, false);
+        let (m2, _) = auto_tune(&s2, None, &MachineSettings::default(), &EstimateInput { ai: true, ..small });
+        assert_eq!(m2.chunk_frames, 16);
+    }
+}
+
+/// Build the estimator input for `info` with `s` (the job settings, machine applied).
+pub fn input_for(env: &crate::pipeline::job::Env, s: &JobSettings, info: &crate::media::probe::MediaInfo) -> Option<EstimateInput> {
+    use crate::media::MediaKind;
+    let cpu = crate::devices::resolve(s.compute, &env.gpus).is_none();
+    let b = crate::engines::choose_backend(s.profile, info.kind, &env.tools, &env.models, cpu).ok()?;
+    let video = info.kind == MediaKind::Video;
+    let p = crate::pipeline::plan::plan_scale(info.width, info.height, s.scale, &b.backend.native_scales(), video);
+    let ai = b.backend.is_ai() && p.model_scale.is_some();
+    let (model_w, model_h) = match p.model_scale.filter(|_| ai) {
+        Some(m) => (info.width * m, info.height * m),
+        None => (info.width, info.height),
+    };
+    let src_fps = info.fps.unwrap_or(crate::media::Rational::new(30, 1));
+    let f = crate::pipeline::plan::plan_fps(src_fps, s.framegen, s.max_fps);
+    let k = if video { f.multiplier } else { 1 };
+    Some(EstimateInput {
+        video,
+        src_w: info.width,
+        src_h: info.height,
+        frames: if video { info.frames.unwrap_or(1) } else { 1 },
+        k,
+        ai,
+        heavy: !b.backend.label().to_ascii_lowercase().contains("animevideo"),
+        model_w,
+        model_h,
+        out_w: p.out_w,
+        out_h: p.out_h,
+        out_fps: if video { f.out_fps.as_f64() } else { 0.0 },
+    })
 }

@@ -4,6 +4,7 @@
 //! tests can drive the real pipeline.
 
 pub mod app;
+pub mod bench;
 pub mod history;
 pub mod i18n;
 pub mod net;

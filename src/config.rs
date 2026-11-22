@@ -203,6 +203,25 @@ impl Container {
     }
 }
 
+/// Encoder speed / quality trade-off (mapped to each encoder's preset).
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum EncoderSpeed {
+    Fast,
+    #[default]
+    Balanced,
+    Quality,
+}
+
+impl EncoderSpeed {
+    pub fn label(self) -> String {
+        match self {
+            EncoderSpeed::Fast => crate::t!("perf.enc_fast"),
+            EncoderSpeed::Balanced => crate::t!("perf.enc_balanced"),
+            EncoderSpeed::Quality => crate::t!("perf.enc_quality"),
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum OverwritePolicy {
     #[default]
@@ -224,6 +243,9 @@ pub struct OutputSettings {
     pub encoder: EncoderChoice,
     /// CQ / CRF / QP value. `None` = per-encoder default.
     pub quality: Option<u32>,
+    pub encoder_speed: EncoderSpeed,
+    /// `Some` = average-bitrate mode (kbit/s) instead of constant quality.
+    pub bitrate_kbps: Option<u32>,
     pub keep_partial: bool,
     /// Appended to the source file name (`photo` → `photo_enhanced.png`).
     pub suffix: String,
@@ -251,6 +273,8 @@ impl Default for OutputSettings {
             container: Container::Mp4,
             encoder: EncoderChoice::Auto,
             quality: None,
+            encoder_speed: EncoderSpeed::Balanced,
+            bitrate_kbps: None,
             keep_partial: false,
             suffix: "_enhanced".into(),
         }

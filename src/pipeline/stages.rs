@@ -263,8 +263,35 @@ impl StagePlan {
     }
 }
 
-/// PNG with fast compression (temp files for the ncnn tools).
+/// Measured PNG size / raw RGB size of real frames (EMA, in 1/10000), 0 = nothing yet.
+static PNG_RATIO: AtomicU32 = AtomicU32::new(0);
+
+/// PNG compression ratio measured on real frames written so far (feeds the temp estimate).
+pub fn png_ratio() -> Option<f64> {
+    match PNG_RATIO.load(Ordering::Relaxed) {
+        0 => None,
+        v => Some(v as f64 / 10000.0),
+    }
+}
+
+/// Record one written frame. Pure function of the old value for testability.
+pub fn ema_ratio(old: u32, bytes: u64, pixels: u64) -> u32 {
+    let r = ((bytes as f64 / (pixels.max(1) as f64 * 3.0)) * 10000.0).clamp(100.0, 15000.0) as u32;
+    if old == 0 { r } else { (old as u64 * 9 / 10 + r as u64 / 10) as u32 }
+}
+
+/// PNG with fast compression (temp files for the ncnn tools). Calibrates [`png_ratio`].
 pub fn write_png_fast(img: &RgbImage, path: &Path) -> Result<(), PipelineError> {
+    write_png_uncalibrated(img, path)?;
+    if let Ok(m) = std::fs::metadata(path) {
+        let px = img.width() as u64 * img.height() as u64;
+        let _ = PNG_RATIO.try_update(Ordering::Relaxed, Ordering::Relaxed, |old| Some(ema_ratio(old, m.len(), px)));
+    }
+    Ok(())
+}
+
+/// [`write_png_fast`] without touching the calibration (synthetic benchmark frames).
+pub fn write_png_uncalibrated(img: &RgbImage, path: &Path) -> Result<(), PipelineError> {
     use image::ImageEncoder;
     use image::codecs::png::{CompressionType, FilterType, PngEncoder};
     let f = std::fs::File::create(path)?;
@@ -276,4 +303,13 @@ pub fn write_png_fast(img: &RgbImage, path: &Path) -> Result<(), PipelineError> 
         image::ExtendedColorType::Rgb8,
     )?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn png_ratio_ema() {
+        assert_eq!(super::ema_ratio(0, 300, 100), 10000);
+        assert_eq!(super::ema_ratio(10000, 150, 100), 9500);
+    }
 }
