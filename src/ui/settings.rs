@@ -28,6 +28,7 @@ pub fn settings_panel(app: &mut App, ui: &mut egui::Ui) {
     egui::Panel::right("settings").resizable(true).default_size(370.0).min_size(300.0).show(ui, |ui| {
         ui.heading(t!("settings.title"));
         hint(ui, t!("settings.intro"));
+        crate::ui::profiles::profile_bar(app, ui);
         ui.separator();
         let before = (app.cur_settings().clone(), app.config.machine.clone());
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {

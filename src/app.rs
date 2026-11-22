@@ -216,6 +216,8 @@ pub struct App {
     history_tx: Sender<()>,
     history_rx: Receiver<()>,
     pub outputs_dirty: bool,
+    pub profiles: crate::profiles::ProfileStore,
+    pub profile_dialog: Option<crate::ui::profiles::ProfileDialog>,
 }
 
 /// Noto Sans Thai (SIL OFL 1.1, see licenses/NotoSansThai-OFL.txt): egui's bundled fonts
@@ -317,6 +319,7 @@ impl App {
         let outputs = crate::outputs::OutputsState::new(&paths, env.tools.clone(), ctx.clone());
         let (history_tx, history_rx) = unbounded();
 
+        let profiles_dir = paths.data.join("profiles");
         let tools_only = start.install_tools;
         // Missing tools: open the downloader (the setup check stays available).
         // An update may pin newer tool versions: offer the re-download (only components
@@ -367,7 +370,10 @@ impl App {
             history_tx,
             history_rx,
             outputs_dirty: true,
+            profiles: crate::profiles::ProfileStore::load(&profiles_dir),
+            profile_dialog: None,
         };
+        crate::ui::profiles::apply_defaults(&mut app);
         app.sync_monitor_gpu();
         if tools_only || missing_tools {
             app.tools_ui.open(&app.paths);

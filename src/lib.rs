@@ -17,5 +17,7 @@ pub mod monitor;
 pub mod paths;
 pub mod pipeline;
 pub mod preview;
+pub mod profiles;
+pub mod resources;
 pub mod ui;
 pub mod util;
