@@ -211,3 +211,84 @@ cargo run --release
   without admin (`PrivilegesRequired=lowest`). Tools are not bundled (size, separate licenses);
   the installer runs `QuickEnhancer.exe --install-tools`, i.e. the same verified downloader as
   the app. Uninstall asks before deleting user data (default No).
+
+## v2.1 plan (Quick Enhancer 2.1)
+
+Order of work: (1) Outputs/list overflow fix → (2) Video / Image pages → (3) named profiles →
+(4) resource-aware settings (estimator, validation, benchmark, auto-tune) → (5) Editor page.
+One commit per feature on the `v2.1` branch.
+
+### How it fits the existing architecture
+
+* **Pages are views, not pipelines.** `Page` grows to All-in-one / Video / Image / Editor /
+  Outputs / Settings. The three *studio* pages (All-in-one, Video, Image) each own a
+  `Workspace` (input list, selection, preview canvas, sample player, scrub position) and a
+  `JobSettings`. The active workspace lives in `App::ws`; the other two are parked and swapped in
+  on page switch (`App::switch_studio`), so all existing panel code keeps borrowing `app.ws.*`
+  disjointly from `app.config` / `app.env`. Item ids stay globally unique, so runner and preview
+  events are routed to whichever workspace holds the item. All jobs still go to the single
+  `Runner`; `QueueItem::origin` records the page and the progress strip / queue cards show it.
+* **Same engine.** Video and Image pages build ordinary `JobSettings` and use `StagePlan`,
+  `run_video`, `run_image` and the preview worker unchanged. New per-stage switches
+  (`denoise_on`, `sharpen_on`) and the new `clarity` filter are fields of `JobSettings`
+  neutralised in `effective()`, defaulting to values that keep the All-in-one page's behaviour
+  identical. "Restore at original size" is `ScaleMode::X1` with an AI profile (already
+  implemented as AI at native scale → Lanczos back down).
+* **Machine vs. recipe.** Hardware-dependent values move to `Config::machine`
+  (`MachineSettings`: device, CPU threads, preset, tile, `-j`, filter threads, priority, chunk
+  size, RAM budget, temp folder). `JobSettings` keeps the same fields because the pipeline reads
+  them, but they are overwritten from `machine` right before a job / preview starts
+  (`JobSettings::with_machine`). Old configs are migrated once: if `[machine]` is missing it is
+  taken from the old `[settings]` values.
+* **Profiles** (`src/profiles.rs`): one TOML file per user profile in `<data>/profiles/`
+  (`schema_version`, `app_version`, `kind`, `name`, `settings`, optional `performance`).
+  Built-ins are defined in code with translated names. Identified as `builtin:<id>` /
+  `user:<name>`. The comparison for the "modified" marker uses `recipe()` (settings with
+  machine fields, output folder and overwrite policy normalised).
+* **Resources** (`src/resources.rs`, pure + unit-tested): `estimate()` (temp per chunk / total,
+  RAM, VRAM, threads, time) and `validate()` → `Issue { level: Warn | Block, … }` with safe
+  automatic fixes. `src/bench.rs`: cancellable benchmark (Real-ESRGAN at several tile sizes,
+  RIFE, filters, PNG write, encoder) stored per GPU in `<data>/benchmark.json`; `auto_tune()`
+  derives tile / chunk / RAM / threads / `-j` from it. Pre-start check runs before the overwrite
+  prompt; the video decoder re-checks free temp space before each new chunk and pauses the job
+  (instead of failing) when it is too low.
+* **Editor** (`src/editor/`): pure ffmpeg argument builders (trim fast/accurate, crop, concat
+  demuxer list, re-encode filter graph) + an `EditOp` carried by `JobSpec::edit`, executed by the
+  same `Runner` (progress via `-progress pipe:1`). Image edits (crop / rotate / flip) use the
+  `image` crate and keep EXIF/ICC where the encoder supports it. Results go to history with
+  `edited = true`.
+
+### Files
+* changed: `app.rs`, `config.rs`, `history.rs`, `ui/mod.rs`, `ui/queue.rs`, `ui/settings.rs`,
+  `ui/outputs.rs`, `pipeline/{job,runner,stages,video_job}.rs`, `engines/filters.rs`,
+  `locales/*.toml`, `main.rs`
+* new: `profiles.rs`, `resources.rs`, `bench.rs`, `editor/{mod,ffmpeg}.rs`,
+  `ui/{studio,video_page,image_page,profiles,perf,editor,settings_page}.rs`
+
+### v2.1 Decisions
+* **No questions were needed**; everything below was decided from the prompt + code.
+* Work happens on branch `v2.1` (one commit per feature), not directly on `main`.
+* Outputs grid: fixed-size cards (thumbnail 176 px) laid out in `floor((w+gap)/(card+gap))`
+  columns inside `ScrollArea::show_rows`, so only visible rows are laid out and only their
+  thumbnails are requested. List view: fixed type/size/date columns, name + folder columns share
+  the rest and are elided in the middle (full text on hover).
+* Application settings (language, updates, tools, font test) and About/Paths moved from the
+  All-in-one side panel to the new **Settings** page, together with the performance
+  (Simple/Advanced) controls. The All-in-one panel keeps its processing sections; its Device and
+  Video-pipeline sections now edit the global machine settings.
+* Output folder and overwrite policy are per page but **not** part of a profile (they are
+  machine/user specific); file-name suffix, formats, encoder and quality are.
+* Hardware values are global machine settings; a profile stores them only when "include
+  performance settings" is ticked on save. Loading such a profile applies them to the machine
+  settings (toast shown); importing one runs the resource checks and offers "Adjust to this PC".
+* Max chunks on disk stays fixed at 2 (the 2-token semaphore); shown read-only.
+* Local contrast ("clarity"): large-radius (σ≈ 1.2 % of the short side, min 6 px) unsharp on
+  luma only, applied after sharpening; cheap (separable blur) and halo-limited by a soft clamp.
+* VRAM estimate: Real-ESRGAN heavy models ≈ 1.9 GB at tile 200 scaling with tile², compact
+  (animevideo) ≈ 35 % of that, × ncnn proc threads; RIFE ≈ 600 B per source pixel (½ in UHD
+  mode). Auto tile stays capped at 256 (TDR safety, see v1 decision); auto-tune never exceeds it.
+* Fast trim uses stream copy with `-ss` before `-i` (keyframe cut); accurate trim re-encodes
+  with the app's encoder. Join without crop and with matching codec/size/fps/pixel format/audio
+  layout uses the concat demuxer with `inpoint`/`outpoint` (stream copy); otherwise a
+  `filter_complex` concat with scale+pad (letterbox), `fps`, `aresample`, and `anullsrc` for
+  clips without audio.

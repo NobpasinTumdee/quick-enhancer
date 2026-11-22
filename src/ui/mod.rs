@@ -155,7 +155,7 @@ fn progress_strip(app: &mut App, ui: &mut egui::Ui) {
     } else {
         p.fraction()
     };
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
         ui.label(t!(
             "progress.queue",
             i = (app.queue_done + 1).min(app.queue_total.max(1)),
@@ -167,7 +167,7 @@ fn progress_strip(app: &mut App, ui: &mut egui::Ui) {
                 .show_percentage(),
         );
         ui.separator();
-        ui.label(RichText::new(&p.file).strong());
+        ui.add(egui::Label::new(RichText::new(&p.file).strong()).truncate());
         ui.add(
             egui::ProgressBar::new(p.fraction())
                 .desired_width(220.0)

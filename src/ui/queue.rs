@@ -85,12 +85,13 @@ pub fn queue_panel(app: &mut App, ui: &mut egui::Ui) {
                                 ui.painter().rect_filled(rect, 3.0, ui.visuals().extreme_bg_color);
                             }
                             ui.vertical(|ui| {
-                                ui.label(RichText::new(item.name()).strong());
+                                ui.add(egui::Label::new(RichText::new(item.name()).strong()).truncate())
+                                    .on_hover_text(item.path.display().to_string());
                                 if let Some(info) = &item.info {
                                     if let Some(len) = info.length_label() {
                                         ui.label(RichText::new(len).color(Color32::from_rgb(140, 200, 255)));
                                     }
-                                    ui.label(RichText::new(info.summary()).small());
+                                    ui.add(egui::Label::new(RichText::new(info.summary()).small()).truncate());
                                 }
                                 ui.horizontal(|ui| {
                                     ui.label(RichText::new(item.status.label()).color(status_color(item.status)).small());

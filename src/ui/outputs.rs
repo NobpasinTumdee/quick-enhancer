@@ -188,13 +188,11 @@ pub fn outputs_page(app: &mut App, ui: &mut egui::Ui) {
             });
             return;
         }
-        egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-            if app.config.outputs.grid {
-                grid(app, ui, &records, &mut act);
-            } else {
-                list(app, ui, &records, &mut act);
-            }
-        });
+        if app.config.outputs.grid {
+            grid(app, ui, &records, &mut act);
+        } else {
+            list(app, ui, &records, &mut act);
+        }
     });
 
     delete_modal(app, &ctx);
@@ -260,84 +258,226 @@ fn thumb_box(app: &mut App, ui: &mut egui::Ui, r: &OutputRecord, size: f32) {
     }
 }
 
-fn grid(app: &mut App, ui: &mut egui::Ui, records: &[OutputRecord], act: &mut Option<Act>) {
-    const CARD: f32 = 176.0;
-    ui.horizontal_wrapped(|ui| {
-        ui.spacing_mut().item_spacing = Vec2::new(10.0, 10.0);
-        for r in records {
-            let selected = app.outputs.selected.as_ref() == Some(&r.path);
-            let resp = ui
-                .scope_builder(egui::UiBuilder::new().sense(egui::Sense::click()), |ui| {
-                    let fill = if selected {
-                        ui.visuals().selection.bg_fill.gamma_multiply(0.35)
-                    } else {
-                        ui.visuals().faint_bg_color
-                    };
-                    egui::Frame::group(ui.style()).fill(fill).show(ui, |ui| {
-                        // Own vertical layout: the parent is a wrapping horizontal one.
-                        ui.vertical(|ui| {
-                            ui.set_width(CARD);
-                            ui.spacing_mut().item_spacing.y = 3.0;
-                            thumb_box(app, ui, r, CARD);
-                            let mut name = RichText::new(file_name(&r.path)).strong();
-                            if !r.exists {
-                                name = name.strikethrough().color(ERR);
-                            }
-                            ui.add(egui::Label::new(name).truncate())
-                                .on_hover_text(r.path.display().to_string());
-                            let line = if r.exists {
-                                format!("{} · {}", format_date(r.date), human_bytes(r.size))
-                            } else {
-                                format!("{} · {}", format_date(r.date), t!("outputs.missing"))
-                            };
-                            ui.label(RichText::new(line).small().weak());
-                        });
-                    });
-                })
-                .response;
-            if resp.clicked() {
-                *act = Some(Act::Select(r.path.clone()));
-            }
-            if resp.double_clicked() && r.exists {
-                *act = Some(Act::Open(r.path.clone()));
+/// Thumbnail size inside a grid card.
+pub const CARD: f32 = 176.0;
+/// Card padding and gap between cards.
+const CARD_PAD: f32 = 6.0;
+const CARD_GAP: f32 = 10.0;
+/// Outer card size (thumb + padding; name + info lines below the thumb).
+pub const CARD_W: f32 = CARD + 2.0 * CARD_PAD;
+pub const CARD_H: f32 = CARD + 2.0 * CARD_PAD + 40.0;
+
+/// Number of grid columns that fit in `avail` (at least 1).
+pub fn grid_columns(avail: f32, card_w: f32, gap: f32) -> usize {
+    (((avail + gap) / (card_w + gap)).floor() as usize).max(1)
+}
+
+/// Shorten `s` to at most `max` chars by replacing the middle with "…".
+pub fn elide_middle(s: &str, max: usize) -> String {
+    let n = s.chars().count();
+    if n <= max {
+        return s.to_string();
+    }
+    if max < 3 {
+        return s.chars().take(max).collect();
+    }
+    let keep = max - 1;
+    let head = keep / 2;
+    let tail = keep - head;
+    let h: String = s.chars().take(head).collect();
+    let t: String = s.chars().skip(n - tail).collect();
+    format!("{h}…{t}")
+}
+
+/// Middle-elided label that fits `width` (full text on hover). Clickable.
+pub fn elided_label(
+    ui: &mut egui::Ui,
+    text: &str,
+    width: f32,
+    rich: impl Fn(String) -> RichText,
+) -> egui::Response {
+    let font = egui::TextStyle::Body.resolve(ui.style());
+    let ctx = ui.ctx().clone();
+    let fits = |t: &str| {
+        ctx.fonts_mut(|f| f.layout_no_wrap(t.to_string(), font.clone(), Color32::WHITE).size().x)
+            <= width
+    };
+    let shown = if fits(text) {
+        text.to_string()
+    } else {
+        // Longest middle-elided string that fits.
+        let (mut lo, mut hi) = (3usize, text.chars().count());
+        while lo < hi {
+            let mid = (lo + hi).div_ceil(2);
+            if fits(&elide_middle(text, mid)) {
+                lo = mid;
+            } else {
+                hi = mid - 1;
             }
         }
-    });
+        elide_middle(text, lo)
+    };
+    let elided = shown != text;
+    let r = ui.add_sized(
+        [width, ui.spacing().interact_size.y],
+        egui::Label::new(rich(shown)).truncate().sense(egui::Sense::click()),
+    );
+    if elided { r.on_hover_text(text) } else { r }
+}
+
+fn grid(app: &mut App, ui: &mut egui::Ui, records: &[OutputRecord], act: &mut Option<Act>) {
+    let cols = grid_columns(ui.available_width(), CARD_W, CARD_GAP);
+    let rows = records.len().div_ceil(cols);
+    egui::ScrollArea::vertical()
+        .auto_shrink([false, false])
+        .show_rows(ui, CARD_H, rows, |ui, range| {
+            ui.spacing_mut().item_spacing = Vec2::new(CARD_GAP, CARD_GAP);
+            for row in range {
+                ui.horizontal(|ui| {
+                    for r in records.iter().skip(row * cols).take(cols) {
+                        card(app, ui, r, act);
+                    }
+                });
+            }
+        });
+}
+
+/// One fixed-size grid card. Only cards in visible rows are drawn, so thumbnails are
+/// requested lazily for what is on screen.
+fn card(app: &mut App, ui: &mut egui::Ui, r: &OutputRecord, act: &mut Option<Act>) {
+    let selected = app.outputs.selected.as_ref() == Some(&r.path);
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(CARD_W, CARD_H), egui::Sense::click());
+    let fill = if selected {
+        ui.visuals().selection.bg_fill.gamma_multiply(0.35)
+    } else {
+        ui.visuals().faint_bg_color
+    };
+    ui.painter().rect_filled(rect, 6.0, fill);
+    if resp.hovered() {
+        ui.painter().rect_stroke(
+            rect,
+            6.0,
+            ui.visuals().widgets.hovered.bg_stroke,
+            egui::StrokeKind::Inside,
+        );
+    }
+    let inner = rect.shrink(CARD_PAD);
+    let mut child = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(inner)
+            .layout(egui::Layout::top_down(egui::Align::Min)),
+    );
+    child.set_clip_rect(inner.intersect(ui.clip_rect()));
+    child.spacing_mut().item_spacing.y = 3.0;
+    thumb_box(app, &mut child, r, CARD);
+    let mut name = RichText::new(file_name(&r.path)).strong();
+    if !r.exists {
+        name = name.strikethrough().color(ERR);
+    }
+    child.add_sized([CARD, 18.0], egui::Label::new(name).truncate());
+    let mut line = if r.exists {
+        format!("{} · {}", format_date(r.date), human_bytes(r.size))
+    } else {
+        format!("{} · {}", format_date(r.date), t!("outputs.missing"))
+    };
+    if r.entry.as_ref().is_some_and(|e| e.edited) {
+        line = format!("✂ {} · {line}", t!("outputs.edited"));
+    }
+    child.add_sized(
+        [CARD, 14.0],
+        egui::Label::new(RichText::new(line).small().weak()).truncate(),
+    );
+    let resp = resp.on_hover_text(r.path.display().to_string());
+    if resp.clicked() {
+        *act = Some(Act::Select(r.path.clone()));
+    }
+    if resp.double_clicked() && r.exists {
+        *act = Some(Act::Open(r.path.clone()));
+    }
 }
 
 fn list(app: &mut App, ui: &mut egui::Ui, records: &[OutputRecord], act: &mut Option<Act>) {
-    egui::Grid::new("outputs-list")
-        .num_columns(5)
-        .striped(true)
-        .spacing([14.0, 4.0])
-        .show(ui, |ui| {
-            ui.label("");
-            ui.label(RichText::new(t!("outputs.col_name")).strong());
-            ui.label(RichText::new(t!("outputs.col_type")).strong());
-            ui.label(RichText::new(t!("outputs.col_size")).strong());
-            ui.label(RichText::new(t!("outputs.col_date")).strong());
-            ui.end_row();
-            for r in records {
-                thumb_box(app, ui, r, 40.0);
+    const ROW_H: f32 = 46.0;
+    const THUMB: f32 = 40.0;
+    const TYPE_W: f32 = 70.0;
+    const SIZE_W: f32 = 80.0;
+    const DATE_W: f32 = 130.0;
+    const GAP: f32 = 10.0;
+    // Scrollbar + margins.
+    let flex = (ui.available_width() - THUMB - TYPE_W - SIZE_W - DATE_W - GAP * 6.0 - 16.0)
+        .max(120.0);
+    let name_w = (flex * 0.45).max(60.0);
+    let dir_w = (flex - name_w).max(60.0);
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = GAP;
+        ui.add_space(THUMB);
+        for (t, w) in [
+            (t!("outputs.col_name"), name_w),
+            (t!("outputs.col_folder"), dir_w),
+            (t!("outputs.col_type"), TYPE_W),
+            (t!("outputs.col_size"), SIZE_W),
+            (t!("outputs.col_date"), DATE_W),
+        ] {
+            ui.add_sized([w, 18.0], egui::Label::new(RichText::new(t).strong()).truncate());
+        }
+    });
+    egui::ScrollArea::vertical()
+        .auto_shrink([false, false])
+        .show_rows(ui, ROW_H, records.len(), |ui, range| {
+            for (i, r) in records.iter().enumerate().skip(range.start).take(range.len()) {
                 let selected = app.outputs.selected.as_ref() == Some(&r.path);
-                let mut name = RichText::new(file_name(&r.path));
-                if !r.exists {
-                    name = name.strikethrough().color(ERR);
+                let row = ui.horizontal(|ui| {
+                    ui.set_height(ROW_H - ui.spacing().item_spacing.y);
+                    ui.spacing_mut().item_spacing.x = GAP;
+                    thumb_box(app, ui, r, THUMB);
+                    let exists = r.exists;
+                    let style = move |t: String| {
+                        let mut n = RichText::new(t);
+                        if selected {
+                            n = n.strong();
+                        }
+                        if !exists {
+                            n = n.strikethrough().color(ERR);
+                        }
+                        n
+                    };
+                    let mut resps = vec![elided_label(ui, &file_name(&r.path), name_w, style)];
+                    let dir = r
+                        .path
+                        .parent()
+                        .map(|d| d.display().to_string())
+                        .unwrap_or_default();
+                    resps.push(elided_label(ui, &dir, dir_w, |t| RichText::new(t).weak()));
+                    let mut kind = match r.kind {
+                        EntryKind::Image => t!("outputs.kind_image"),
+                        EntryKind::Video => t!("outputs.kind_video"),
+                    };
+                    if r.entry.as_ref().is_some_and(|e| e.edited) {
+                        kind = format!("{kind} ✂");
+                    }
+                    ui.add_sized([TYPE_W, 18.0], egui::Label::new(kind).truncate());
+                    let size = if r.exists { human_bytes(r.size) } else { t!("outputs.missing") };
+                    ui.add_sized([SIZE_W, 18.0], egui::Label::new(size).truncate());
+                    ui.add_sized([DATE_W, 18.0], egui::Label::new(format_date(r.date)).truncate());
+                    resps
+                });
+                let row_rect = row.response.rect;
+                if selected {
+                    ui.painter().rect_filled(
+                        row_rect,
+                        3.0,
+                        ui.visuals().selection.bg_fill.gamma_multiply(0.25),
+                    );
                 }
-                let resp = ui.selectable_label(selected, name);
-                if resp.clicked() {
+                let bg = ui.interact(row_rect, ui.scope_id().with(("out-row", i)), egui::Sense::click());
+                let clicked = bg.clicked() || row.inner.iter().any(|r| r.clicked());
+                let dbl = bg.double_clicked() || row.inner.iter().any(|r| r.double_clicked());
+                if clicked {
                     *act = Some(Act::Select(r.path.clone()));
                 }
-                if resp.double_clicked() && r.exists {
+                if dbl && r.exists {
                     *act = Some(Act::Open(r.path.clone()));
                 }
-                ui.label(match r.kind {
-                    EntryKind::Image => t!("outputs.kind_image"),
-                    EntryKind::Video => t!("outputs.kind_video"),
-                });
-                ui.label(if r.exists { human_bytes(r.size) } else { t!("outputs.missing") });
-                ui.label(format_date(r.date));
-                ui.end_row();
             }
         });
 }
@@ -464,5 +604,31 @@ fn delete_modal(app: &mut App, ctx: &egui::Context) {
         }
         Some(false) => app.outputs.confirm_delete = None,
         None => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn columns_wrap_to_width() {
+        assert_eq!(grid_columns(100.0, CARD_W, 10.0), 1);
+        assert_eq!(grid_columns(0.0, CARD_W, 10.0), 1);
+        assert_eq!(grid_columns(CARD_W * 2.0 + 10.0, CARD_W, 10.0), 2);
+        assert_eq!(grid_columns(CARD_W * 2.0 + 9.0, CARD_W, 10.0), 1);
+        // ~800 px window minus margins.
+        assert_eq!(grid_columns(780.0, CARD_W, 10.0), 3);
+    }
+
+    #[test]
+    fn middle_elision() {
+        assert_eq!(elide_middle("short", 10), "short");
+        let e = elide_middle("C:/very/long/path/to/some/file.mp4", 12);
+        assert_eq!(e.chars().count(), 12);
+        assert!(e.starts_with("C:/v") && e.ends_with(".mp4") && e.contains('…'));
+        // Thai (multi-byte) is cut on char boundaries.
+        let th = elide_middle("วิดีโอที่ปรับปรุงแล้วยาวมาก.mp4", 9);
+        assert_eq!(th.chars().count(), 9);
     }
 }

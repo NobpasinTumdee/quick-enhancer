@@ -878,6 +878,7 @@ impl App {
                     duration_secs: out_info.as_ref().and_then(|i| i.duration),
                     size_bytes: std::fs::metadata(&output).map(|m| m.len()).unwrap_or(0),
                     processing_secs,
+                    edited: false,
                 };
                 if let Err(e) = crate::history::History::append_to_file(&file, entry) {
                     tracing::warn!("writing history failed: {e}");
