@@ -3,9 +3,13 @@
 
 pub mod fonttest;
 pub mod outputs;
+pub mod perf;
+pub mod profiles;
 pub mod queue;
 pub mod settings;
+pub mod settings_page;
 pub mod setup;
+pub mod studio;
 pub mod tools;
 pub mod update;
 pub mod widgets;
@@ -13,7 +17,7 @@ pub mod widgets;
 use egui::{Color32, RichText};
 
 use crate::app::{App, Page};
-use crate::config::OverwritePolicy;
+use crate::config::{OverwritePolicy, Studio};
 use crate::media::MediaKind;
 use crate::preview::canvas::CompareMode;
 use crate::t;
@@ -25,15 +29,24 @@ pub fn top_bar(app: &mut App, ui: &mut egui::Ui) {
             ui.heading("Quick Enhancer");
             ui.separator();
             let ctx = ui.ctx().clone();
-            ui.selectable_value(&mut app.page, Page::Queue, RichText::new(t!("tabs.queue")).strong());
-            if ui
-                .selectable_value(&mut app.page, Page::Outputs, RichText::new(t!("tabs.outputs")).strong())
-                .clicked()
-            {
-                app.refresh_outputs(&ctx);
+            for s in Studio::ALL {
+                let on = app.page == Page::of(s);
+                if ui.selectable_label(on, RichText::new(s.label()).strong()).clicked() {
+                    app.switch_studio(s);
+                }
+            }
+            for (p, label) in [
+                (Page::Outputs, t!("tabs.outputs")),
+                (Page::Settings, t!("tabs.settings")),
+            ] {
+                if ui.selectable_value(&mut app.page, p, RichText::new(label).strong()).clicked()
+                    && p == Page::Outputs
+                {
+                    app.refresh_outputs(&ctx);
+                }
             }
             ui.separator();
-            if app.page == Page::Queue {
+            if app.page.studio().is_some() {
                 queue_controls(app, ui);
                 ui.separator();
             }
@@ -58,13 +71,16 @@ pub fn top_bar(app: &mut App, ui: &mut egui::Ui) {
 
 fn queue_controls(app: &mut App, ui: &mut egui::Ui) {
     if ui.button(t!("top.add_files")).clicked() {
-        let exts: Vec<&str> = crate::media::IMAGE_EXTS
-            .iter()
-            .chain(crate::media::VIDEO_EXTS.iter())
-            .copied()
-            .collect();
+        let (exts, filter): (Vec<&str>, String) = match app.studio {
+            Studio::All => (
+                crate::media::IMAGE_EXTS.iter().chain(crate::media::VIDEO_EXTS.iter()).copied().collect(),
+                t!("top.filter_media"),
+            ),
+            Studio::Video => (crate::media::VIDEO_EXTS.to_vec(), t!("top.filter_videos")),
+            Studio::Image => (crate::media::IMAGE_EXTS.to_vec(), t!("top.filter_images")),
+        };
         if let Some(files) = rfd::FileDialog::new()
-            .add_filter(t!("top.filter_media"), &exts)
+            .add_filter(filter, &exts)
             .add_filter(t!("top.filter_all"), &["*"])
             .pick_files()
         {
@@ -80,6 +96,7 @@ fn queue_controls(app: &mut App, ui: &mut egui::Ui) {
     ui.separator();
     let busy = app.runner.is_busy();
     let pending = app
+        .ws
         .items
         .iter()
         .filter(|i| i.status == crate::app::ItemStatus::Pending)
@@ -141,12 +158,13 @@ fn progress_strip(app: &mut App, ui: &mut egui::Ui) {
     let p = app.runner.progress.get();
     if p.job.is_none() {
         let done = app
+            .ws
             .items
             .iter()
             .filter(|i| i.status == crate::app::ItemStatus::Done)
             .count();
         ui.label(
-            RichText::new(t!("progress.idle", n = app.items.len(), done = done)).weak(),
+            RichText::new(t!("progress.idle", n = app.ws.items.len(), done = done)).weak(),
         );
         return;
     }
@@ -167,6 +185,9 @@ fn progress_strip(app: &mut App, ui: &mut egui::Ui) {
                 .show_percentage(),
         );
         ui.separator();
+        if let Some(origin) = p.job.and_then(|id| app.item(id)).map(|i| i.origin) {
+            ui.label(RichText::new(format!("[{}]", origin.label())).weak());
+        }
         ui.add(egui::Label::new(RichText::new(&p.file).strong()).truncate());
         ui.add(
             egui::ProgressBar::new(p.fraction())
@@ -272,22 +293,22 @@ pub fn preview_panel(app: &mut App, ui: &mut egui::Ui) {
         ui.horizontal_wrapped(|ui| {
             ui.label(RichText::new(&name).strong());
             ui.separator();
-            ui.selectable_value(&mut app.canvas.mode, CompareMode::Wipe, t!("preview.wipe"));
-            ui.selectable_value(&mut app.canvas.mode, CompareMode::SideBySide, t!("preview.side_by_side"));
+            ui.selectable_value(&mut app.ws.canvas.mode, CompareMode::Wipe, t!("preview.wipe"));
+            ui.selectable_value(&mut app.ws.canvas.mode, CompareMode::SideBySide, t!("preview.side_by_side"));
             if ui
-                .selectable_label(app.canvas.mode == CompareMode::Toggle, t!("preview.toggle"))
+                .selectable_label(app.ws.canvas.mode == CompareMode::Toggle, t!("preview.toggle"))
                 .clicked()
             {
-                app.canvas.toggle();
+                app.ws.canvas.toggle();
             }
             ui.separator();
             if ui.button(t!("preview.fit")).clicked() {
-                app.canvas.fit();
+                app.ws.canvas.fit();
             }
             if ui.button("100%").clicked() {
-                app.canvas.actual_size();
+                app.ws.canvas.actual_size();
             }
-            ui.label(format!("{:.0}%", app.canvas.zoom() * 100.0));
+            ui.label(format!("{:.0}%", app.ws.canvas.zoom() * 100.0));
             ui.separator();
             if ui.button(t!("preview.render")).clicked() {
                 app.request_still_preview(true);
@@ -315,19 +336,19 @@ pub fn preview_panel(app: &mut App, ui: &mut egui::Ui) {
             let dur = info.duration.unwrap_or(0.0).max(0.0);
             let fps = info.fps.map(|f| f.as_f64()).unwrap_or(30.0);
             ui.horizontal(|ui| {
-                let mut t = app.scrub_time.min(dur);
+                let mut t = app.ws.scrub_time.min(dur);
                 ui.spacing_mut().slider_width = (ui.available_width() - 460.0).max(120.0);
                 let r = ui.add(egui::Slider::new(&mut t, 0.0..=dur.max(0.01)).show_value(false));
                 if r.changed() {
-                    app.scrub_time = t;
+                    app.ws.scrub_time = t;
                 }
                 if r.drag_stopped() || (r.changed() && !r.dragged()) {
                     app.request_still_preview(false);
                 }
                 ui.monospace(t!(
                     "preview.position",
-                    time = human_duration(app.scrub_time),
-                    frame = (app.scrub_time * fps).round() as u64
+                    time = human_duration(app.ws.scrub_time),
+                    frame = (app.ws.scrub_time * fps).round() as u64
                 ));
                 ui.add(
                     egui::DragValue::new(&mut app.config.sample_seconds)
@@ -342,8 +363,8 @@ pub fn preview_panel(app: &mut App, ui: &mut egui::Ui) {
                 {
                     app.request_sample();
                 }
-                if app.player.is_some() && ui.button(t!("preview.close_sample")).clicked() {
-                    app.player = None;
+                if app.ws.player.is_some() && ui.button(t!("preview.close_sample")).clicked() {
+                    app.ws.player = None;
                 }
             });
         }
@@ -353,16 +374,16 @@ pub fn preview_panel(app: &mut App, ui: &mut egui::Ui) {
         if warn_vfr {
             ui.colored_label(Color32::from_rgb(230, 170, 60), t!("preview.warn_vfr"));
         }
-        if let Some(e) = &app.preview_error {
+        if let Some(e) = &app.ws.preview_error {
             ui.colored_label(Color32::from_rgb(240, 100, 100), t!("preview.failed", error = e));
-        } else if !app.preview_note.is_empty() && app.player.is_none() {
+        } else if !app.ws.preview_note.is_empty() && app.ws.player.is_none() {
             ui.label(
-                RichText::new(format!("{} · {:.2}s", app.preview_note, app.preview_secs))
+                RichText::new(format!("{} · {:.2}s", app.ws.preview_note, app.ws.preview_secs))
                     .small()
                     .weak(),
             );
         }
-        if let Some(p) = app.player.as_mut() {
+        if let Some(p) = app.ws.player.as_mut() {
             let c = &mut app.config;
             p.ui(
                 ui,
@@ -373,7 +394,7 @@ pub fn preview_panel(app: &mut App, ui: &mut egui::Ui) {
                 },
             );
         } else {
-            app.canvas.ui(ui);
+            app.ws.canvas.ui(ui);
         }
     });
 }

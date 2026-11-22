@@ -98,7 +98,7 @@ pub fn outputs_page(app: &mut App, ui: &mut egui::Ui) {
     if !app.outputs.loaded_once && !app.outputs.scanning {
         app.refresh_outputs(&ctx);
     }
-    let folder = app.outputs_folder();
+    let folders = app.outputs_folders();
     let records = visible(
         &app.outputs.records,
         app.config.outputs.filter,
@@ -159,22 +159,18 @@ pub fn outputs_page(app: &mut App, ui: &mut egui::Ui) {
                 ui.spinner();
             }
         });
-        match &folder {
-            Some(f) => {
-                ui.horizontal(|ui| {
-                    ui.label(
-                        RichText::new(t!("outputs.scanning_folder", folder = f.display()))
-                            .small()
-                            .weak(),
-                    );
-                    if ui.small_button(t!("common.open_folder")).clicked() {
-                        super::open_path(f);
-                    }
-                });
-            }
-            None => {
-                ui.label(RichText::new(t!("outputs.history_only")).small().color(WARN));
-            }
+        if folders.is_empty() {
+            ui.label(RichText::new(t!("outputs.history_only")).small().color(WARN));
+        }
+        for f in &folders {
+            ui.horizontal(|ui| {
+                let w = (ui.available_width() - 120.0).max(80.0);
+                let text = t!("outputs.scanning_folder", folder = f.display());
+                elided_label(ui, &text, w, |t| RichText::new(t).small().weak());
+                if ui.small_button(t!("common.open_folder")).clicked() {
+                    super::open_path(f);
+                }
+            });
         }
         ui.separator();
         if records.is_empty() {

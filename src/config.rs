@@ -225,6 +225,20 @@ pub struct OutputSettings {
     /// CQ / CRF / QP value. `None` = per-encoder default.
     pub quality: Option<u32>,
     pub keep_partial: bool,
+    /// Appended to the source file name (`photo` → `photo_enhanced.png`).
+    pub suffix: String,
+}
+
+impl OutputSettings {
+    /// Suffix that is safe in a file name (default when empty).
+    pub fn safe_suffix(&self) -> String {
+        let s: String = self
+            .suffix
+            .chars()
+            .filter(|c| !matches!(c, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*') && !c.is_control())
+            .collect();
+        if s.trim().is_empty() { "_enhanced".into() } else { s }
+    }
 }
 
 impl Default for OutputSettings {
@@ -238,6 +252,7 @@ impl Default for OutputSettings {
             encoder: EncoderChoice::Auto,
             quality: None,
             keep_partial: false,
+            suffix: "_enhanced".into(),
         }
     }
 }
@@ -269,6 +284,10 @@ pub struct JobSettings {
     pub upscale_on: bool,
     pub framegen_on: bool,
     pub filters_on: bool,
+    /// Per-stage switches used by the Video / Image pages (All-in-one keeps them on and
+    /// uses `filters_on` for both).
+    pub denoise_on: bool,
+    pub sharpen_on: bool,
     pub profile: Profile,
     pub scale: ScaleMode,
     pub framegen: FrameGenMode,
@@ -284,6 +303,8 @@ pub struct JobSettings {
     pub unsharp_radius: f32,
     pub unsharp_amount: f32,
     pub unsharp_threshold: u8,
+    /// Local contrast ("clarity") strength 0..=1, applied after sharpening (0 = off).
+    pub clarity: f32,
 
     pub compute: ComputeDevice,
     pub cpu_threads: u32,
@@ -313,8 +334,192 @@ impl JobSettings {
         if !s.filters_on {
             s.denoise = 0.0;
             s.sharpen = SharpenMode::Off;
+            s.clarity = 0.0;
+        }
+        if !s.denoise_on {
+            s.denoise = 0.0;
+        }
+        if !s.sharpen_on {
+            s.sharpen = SharpenMode::Off;
+            s.clarity = 0.0;
         }
         s
+    }
+
+    /// The hardware-dependent part of these settings.
+    pub fn machine(&self) -> MachineSettings {
+        MachineSettings {
+            compute: self.compute,
+            cpu_threads: self.cpu_threads,
+            preset: self.preset,
+            tile_override: self.tile_override,
+            jobs_override: self.jobs_override.clone(),
+            filter_threads_override: self.filter_threads_override,
+            priority_override: self.priority_override,
+            chunk_frames: self.video.chunk_frames,
+            ram_budget_mb: self.video.ram_budget_mb,
+            temp_dir: self.video.temp_dir.clone(),
+        }
+    }
+
+    /// These settings with the machine (performance) values replaced by `m`.
+    pub fn with_machine(&self, m: &MachineSettings) -> JobSettings {
+        let mut s = self.clone();
+        s.compute = m.compute;
+        s.cpu_threads = m.cpu_threads;
+        s.preset = m.preset;
+        s.tile_override = m.tile_override;
+        s.jobs_override = m.jobs_override.clone();
+        s.filter_threads_override = m.filter_threads_override;
+        s.priority_override = m.priority_override;
+        s.video = VideoSettings {
+            chunk_frames: m.chunk_frames,
+            ram_budget_mb: m.ram_budget_mb,
+            temp_dir: m.temp_dir.clone(),
+        };
+        s
+    }
+
+    /// The processing recipe only: machine values, output folder and overwrite policy are
+    /// normalised (they are not part of a profile and don't make it "modified").
+    pub fn recipe(&self) -> JobSettings {
+        let d = JobSettings::default();
+        let mut r = self.with_machine(&d.machine());
+        r.output.folder = None;
+        r.output.overwrite = d.output.overwrite;
+        r.output.keep_partial = d.output.keep_partial;
+        r
+    }
+
+    /// Apply a recipe, keeping this page's machine values, output folder and overwrite policy.
+    pub fn apply_recipe(&mut self, recipe: &JobSettings) {
+        let keep_folder = self.output.folder.clone();
+        let keep_ow = self.output.overwrite;
+        let keep_partial = self.output.keep_partial;
+        let m = self.machine();
+        *self = recipe.with_machine(&m);
+        self.output.folder = keep_folder;
+        self.output.overwrite = keep_ow;
+        self.output.keep_partial = keep_partial;
+    }
+
+    /// Defaults for the Video page: frame generation 2x + 2x upscale.
+    pub fn video_defaults() -> JobSettings {
+        JobSettings {
+            framegen: FrameGenMode::X2,
+            ..Default::default()
+        }
+    }
+
+    /// Defaults for the Image page: 2x Photo, light CAS.
+    pub fn image_defaults() -> JobSettings {
+        JobSettings {
+            framegen_on: false,
+            sharpen: SharpenMode::Cas,
+            cas_strength: 0.3,
+            denoise: 0.1,
+            ..Default::default()
+        }
+    }
+}
+
+/// Hardware-dependent settings shared by every page (not part of a profile recipe).
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+#[serde(default)]
+pub struct MachineSettings {
+    pub compute: ComputeDevice,
+    pub cpu_threads: u32,
+    pub preset: Preset,
+    pub tile_override: Option<TileSize>,
+    pub jobs_override: Option<String>,
+    pub filter_threads_override: Option<u32>,
+    pub priority_override: Option<Priority>,
+    pub chunk_frames: u32,
+    pub ram_budget_mb: u32,
+    /// `None` = system temp dir.
+    pub temp_dir: Option<PathBuf>,
+}
+
+impl Default for MachineSettings {
+    fn default() -> Self {
+        JobSettings::default().machine()
+    }
+}
+
+/// A page that owns its own inputs + settings (they all share one job runner).
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, Hash, Default)]
+pub enum Studio {
+    #[default]
+    All,
+    Video,
+    Image,
+}
+
+impl Studio {
+    pub const ALL: [Studio; 3] = [Studio::All, Studio::Video, Studio::Image];
+    pub fn index(self) -> usize {
+        self as usize
+    }
+    pub fn label(self) -> String {
+        match self {
+            Studio::All => crate::t!("tabs.all_in_one"),
+            Studio::Video => crate::t!("tabs.video"),
+            Studio::Image => crate::t!("tabs.image"),
+        }
+    }
+    /// Whether this page takes files of `kind`.
+    pub fn accepts(self, kind: crate::media::MediaKind) -> bool {
+        use crate::media::MediaKind;
+        match self {
+            Studio::All => true,
+            Studio::Video => kind == MediaKind::Video,
+            Studio::Image => kind == MediaKind::Image,
+        }
+    }
+}
+
+/// Per-page UI state that is remembered (profiles, Simple/Advanced).
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug, Default)]
+#[serde(default)]
+pub struct PageMeta {
+    pub advanced: bool,
+    /// Profile key last loaded on this page (`builtin:<id>` / `user:<name>`).
+    pub last_profile: Option<String>,
+    pub default_profile: Option<String>,
+    /// Most recent first, at most 5.
+    pub recent: Vec<String>,
+}
+
+impl PageMeta {
+    pub fn touch_recent(&mut self, key: &str) {
+        self.recent.retain(|k| k != key);
+        self.recent.insert(0, key.to_string());
+        self.recent.truncate(5);
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug, Default)]
+#[serde(default)]
+pub struct Pages {
+    pub all: PageMeta,
+    pub video: PageMeta,
+    pub image: PageMeta,
+}
+
+impl Pages {
+    pub fn get(&self, s: Studio) -> &PageMeta {
+        match s {
+            Studio::All => &self.all,
+            Studio::Video => &self.video,
+            Studio::Image => &self.image,
+        }
+    }
+    pub fn get_mut(&mut self, s: Studio) -> &mut PageMeta {
+        match s {
+            Studio::All => &mut self.all,
+            Studio::Video => &mut self.video,
+            Studio::Image => &mut self.image,
+        }
     }
 }
 
@@ -324,6 +529,8 @@ impl Default for JobSettings {
             upscale_on: true,
             framegen_on: true,
             filters_on: true,
+            denoise_on: true,
+            sharpen_on: true,
             profile: Profile::Realistic,
             scale: ScaleMode::X2,
             framegen: FrameGenMode::Off,
@@ -337,6 +544,7 @@ impl Default for JobSettings {
             unsharp_radius: 1.2,
             unsharp_amount: 0.6,
             unsharp_threshold: 2,
+            clarity: 0.0,
             compute: ComputeDevice::Auto,
             cpu_threads: 0,
             preset: Preset::Balanced,
@@ -353,7 +561,17 @@ impl Default for JobSettings {
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 #[serde(default)]
 pub struct Config {
+    /// All-in-one page settings (kept under the 2.0 key for compatibility).
     pub settings: JobSettings,
+    pub video_settings: JobSettings,
+    pub image_settings: JobSettings,
+    /// Hardware-dependent values shared by all pages.
+    pub machine: MachineSettings,
+    pub pages: Pages,
+    /// Settings page: show every performance control.
+    pub perf_advanced: bool,
+    /// Benchmark was offered once after the first tools install.
+    pub bench_offered: bool,
     pub recursive: bool,
     pub auto_preview: bool,
     pub sample_seconds: f32,
@@ -410,6 +628,12 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             settings: JobSettings::default(),
+            video_settings: JobSettings::video_defaults(),
+            image_settings: JobSettings::image_defaults(),
+            machine: MachineSettings::default(),
+            pages: Pages::default(),
+            perf_advanced: false,
+            bench_offered: false,
             recursive: true,
             auto_preview: true,
             sample_seconds: 3.0,
@@ -428,7 +652,7 @@ impl Default for Config {
 impl Config {
     pub fn load(path: &Path) -> Config {
         match std::fs::read_to_string(path) {
-            Ok(text) => match toml::from_str::<Config>(&text) {
+            Ok(text) => match Config::parse(&text) {
                 Ok(c) => c,
                 Err(e) => {
                     tracing::warn!("config.toml is invalid ({e}); using defaults");
@@ -437,6 +661,42 @@ impl Config {
             },
             Err(_) => Config::default(),
         }
+    }
+
+    /// Parse `config.toml`, migrating 2.0 files (no `[machine]` table: the performance
+    /// values are taken from the old `[settings]`).
+    pub fn parse(text: &str) -> Result<Config, toml::de::Error> {
+        let mut c: Config = toml::from_str(text)?;
+        let has_machine = text
+            .parse::<toml::Table>()
+            .map(|t| t.contains_key("machine"))
+            .unwrap_or(true);
+        if !has_machine {
+            c.machine = c.settings.machine();
+        }
+        Ok(c)
+    }
+
+    pub fn settings_for(&self, s: Studio) -> &JobSettings {
+        match s {
+            Studio::All => &self.settings,
+            Studio::Video => &self.video_settings,
+            Studio::Image => &self.image_settings,
+        }
+    }
+
+    pub fn settings_for_mut(&mut self, s: Studio) -> &mut JobSettings {
+        match s {
+            Studio::All => &mut self.settings,
+            Studio::Video => &mut self.video_settings,
+            Studio::Image => &mut self.image_settings,
+        }
+    }
+
+    /// What a job / preview runs with: machine values applied, switched-off sections
+    /// neutralised.
+    pub fn job(&self, s: &JobSettings) -> JobSettings {
+        s.with_machine(&self.machine).effective()
     }
 
     pub fn save(&self, path: &Path) -> anyhow::Result<()> {
@@ -467,6 +727,48 @@ mod tests {
         let text = toml::to_string_pretty(&c).unwrap();
         let back: Config = toml::from_str(&text).unwrap();
         assert_eq!(c, back);
+    }
+
+    #[test]
+    fn v2_config_migrates_machine_settings() {
+        let text = "[settings]\npreset = \"Eco\"\n[settings.video]\nchunk_frames = 64\n";
+        let c = Config::parse(text).unwrap();
+        assert_eq!(c.machine.preset, Preset::Eco);
+        assert_eq!(c.machine.chunk_frames, 64);
+        // An explicit [machine] wins.
+        let text = "[settings]\npreset = \"Eco\"\n[machine]\npreset = \"Max\"\n";
+        assert_eq!(Config::parse(text).unwrap().machine.preset, Preset::Max);
+        // New pages get their own defaults.
+        assert_eq!(c.video_settings, JobSettings::video_defaults());
+    }
+
+    #[test]
+    fn recipe_ignores_machine_and_folder() {
+        let mut a = JobSettings::default();
+        let mut b = a.clone();
+        b.preset = Preset::Max;
+        b.video.chunk_frames = 999;
+        b.output.folder = Some("D:/x".into());
+        assert_eq!(a.recipe(), b.recipe());
+        b.denoise = 0.5;
+        assert_ne!(a.recipe(), b.recipe());
+        // apply_recipe keeps the page's own folder + machine values.
+        a.output.folder = Some("E:/out".into());
+        a.preset = Preset::Eco;
+        a.apply_recipe(&b);
+        assert_eq!(a.denoise, 0.5);
+        assert_eq!(a.output.folder, Some("E:/out".into()));
+        assert_eq!(a.preset, Preset::Eco);
+    }
+
+    #[test]
+    fn suffix_is_sanitised() {
+        let mut o = OutputSettings::default();
+        assert_eq!(o.safe_suffix(), "_enhanced");
+        o.suffix = "_a/b:c".into();
+        assert_eq!(o.safe_suffix(), "_abc");
+        o.suffix = "  ".into();
+        assert_eq!(o.safe_suffix(), "_enhanced");
     }
 
     #[test]
@@ -507,6 +809,21 @@ mod switch_tests {
     #[test]
     fn old_config_without_switches_defaults_on() {
         let s: JobSettings = toml::from_str("denoise = 0.2").unwrap();
-        assert!(s.upscale_on && s.framegen_on && s.filters_on);
+        assert!(s.upscale_on && s.framegen_on && s.filters_on && s.denoise_on && s.sharpen_on);
+    }
+
+    #[test]
+    fn stage_switches() {
+        let s = JobSettings {
+            denoise: 0.4,
+            sharpen: SharpenMode::Cas,
+            clarity: 0.5,
+            denoise_on: false,
+            ..Default::default()
+        };
+        let e = s.effective();
+        assert_eq!((e.denoise, e.sharpen, e.clarity), (0.0, SharpenMode::Cas, 0.5));
+        let e = JobSettings { sharpen_on: false, ..s }.effective();
+        assert_eq!((e.sharpen, e.clarity), (SharpenMode::Off, 0.0));
     }
 }

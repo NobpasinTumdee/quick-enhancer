@@ -13,6 +13,11 @@ seconds_suffix = " วินาที"
 [tabs]
 queue = "คิวงาน"
 outputs = "ผลงาน"
+all_in_one = "ทั้งหมดในหน้าเดียว"
+video = "วิดีโอ"
+image = "รูปภาพ"
+editor = "ตัดต่อ"
+settings = "ตั้งค่า"
 
 [top]
 add_files = "+ เพิ่มไฟล์…"
@@ -30,6 +35,8 @@ pause_tip = "พักระหว่างช่วง (chunk) ของวิ�
 setup_ok = "✔ เครื่องมือพร้อม"
 setup_missing = "⚠ เครื่องมือขาด {n} รายการ"
 log = "บันทึก"
+filter_videos = "วิดีโอ"
+filter_images = "รูปภาพ"
 
 [progress]
 idle = "ว่าง · มี {n} รายการในคิว · เสร็จแล้ว {done}"
@@ -65,6 +72,14 @@ pinned_tip = "รายการนี้ใช้ค่าตั้งที่
 unpin_tip = "กลับไปใช้ค่าตั้งปัจจุบัน"
 remove = "✖ นำออก"
 show_output = "ดูไฟล์ผลลัพธ์"
+title_video = "ไฟล์วิดีโอ"
+title_image = "ไฟล์รูปภาพ"
+other_pages = "งานจากหน้าอื่นในคิวเดียวกัน: {list}"
+rejected_images = "ไม่ได้เพิ่มรูปภาพ {n} ไฟล์ เพราะหน้านี้รับเฉพาะวิดีโอ"
+rejected_videos = "ไม่ได้เพิ่มวิดีโอ {n} ไฟล์ เพราะหน้านี้รับเฉพาะรูปภาพ"
+open_in_image = "เปิดในหน้ารูปภาพ"
+open_in_video = "เปิดในหน้าวิดีโอ"
+dismiss = "ปิด"
 
 [status]
 probing = "กำลังอ่านไฟล์…"
@@ -246,6 +261,9 @@ path_program = "โปรแกรม"
 about_licenses = "Quick Enhancer ใช้ FFmpeg, Real-ESRGAN (ncnn-vulkan), RIFE (ncnn-vulkan) และฟอนต์ Noto Sans Thai (SIL OFL 1.1) ดูประกาศสัญญาอนุญาตฉบับเต็มในโฟลเดอร์ licenses"
 releases_page = "หน้าดาวน์โหลดเวอร์ชันต่าง ๆ"
 open_licenses = "เปิดโฟลเดอร์สัญญาอนุญาต"
+app_moved = "ภาษา การอัปเดต เครื่องมือ และข้อมูลโปรแกรม อยู่ที่หน้า \"ตั้งค่า\""
+suffix = "ต่อท้ายชื่อไฟล์"
+suffix_tip = "เติมต่อท้ายชื่อไฟล์ต้นฉบับ เช่น photo → photo_enhanced.png"
 
 [framegen]
 target = "FPS เป้าหมาย"
@@ -483,3 +501,35 @@ credit = "ฟอนต์: Noto Sans Thai สัญญาอนุญาต SIL 
 [probe]
 length = "ความยาว {time} ({secs} วินาที)"
 length_frames = "ความยาว {time} ({secs} วินาที · {frames} เฟรม)"
+
+[settings_page]
+intro = "การตั้งค่าที่ใช้ร่วมกันทุกหน้า ค่าประสิทธิภาพเป็นของเครื่องนี้และไม่ถูกเก็บในโปรไฟล์ (เว้นแต่เลือกให้รวมไว้)"
+performance = "ประสิทธิภาพ"
+
+[studio]
+simple = "แบบง่าย"
+advanced = "ขั้นสูง"
+advanced_tip = "แสดงตัวเลือกทั้งหมด"
+summary_none = "เพิ่มไฟล์แล้วเลือก เพื่อดูว่าผลลัพธ์จะเป็นอย่างไร"
+video_title = "สตูดิโอวิดีโอ"
+video_tagline = "สร้างเฟรม + ขยายภาพ + ลดนอยส์"
+image_title = "สตูดิโอรูปภาพ"
+image_tagline = "ขยายภาพ + เพิ่มความคมชัด"
+sec_denoise = "ลดนอยส์"
+denoise_off = "ไม่ลดนอยส์"
+denoise_hint = "ลดนอยส์ทีละเฟรมแบบรักษาขอบ ทำที่ความละเอียดต้นฉบับก่อนขั้นอื่น (เวอร์ชันนี้ยังไม่มีแบบข้ามเฟรม)"
+sec_upscale = "ขยายภาพ"
+sec_sharpen = "เพิ่มความคม"
+sharpen_off = "ไม่เพิ่มความคม"
+clarity = "คอนทราสต์เฉพาะจุด"
+clarity_tip = "ความชัดเจน: เน้นรายละเอียดขนาดกลาง (พื้นผิว รูปทรงเล็ก ๆ) โดยไม่ทำให้ขอบแข็ง 0 = ปิด"
+light_denoise = "ลดนอยส์เล็กน้อย"
+light_denoise_tip = "ทำก่อน AI ควรตั้งต่ำ เพราะโมเดล AI ลดนอยส์ให้อยู่แล้ว"
+clarity_hint = "ลำดับ: ลดนอยส์ → AI → ปรับขนาด → เพิ่มความคม → คอนทราสต์เฉพาะจุด"
+sec_mode = "โหมด"
+sec_clarity = "ความคมชัด"
+mode_upscale = "ขยายภาพ"
+mode_restore = "★ ฟื้นฟูที่ขนาดเดิม"
+mode_restore_tip = "AI supersampling: รันโมเดล AI ที่สเกลของมัน แล้วย่อกลับเป็นขนาดต้นฉบับด้วย Lanczos"
+restore_explain = "วิธีที่ดีที่สุดในการทำให้ภาพคมขึ้นโดยคงความละเอียดเดิม: AI ขยายภาพก่อน แล้วย่อกลับเป็นขนาดเดิม"
+profile_photo = "ภาพถ่าย"

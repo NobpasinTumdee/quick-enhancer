@@ -3,6 +3,7 @@
 use egui::{Color32, RichText, Vec2};
 
 use crate::app::{App, ItemStatus};
+use crate::config::Studio;
 use crate::t;
 
 fn status_color(s: ItemStatus) -> Color32 {
@@ -25,9 +26,47 @@ enum Action {
 pub fn queue_panel(app: &mut App, ui: &mut egui::Ui) {
     egui::Panel::left("queue").resizable(true).default_size(340.0).min_size(260.0).show(ui, |ui| {
         ui.horizontal(|ui| {
-            ui.heading(t!("queue.title"));
-            ui.label(format!("({})", app.items.len()));
+            ui.heading(match app.studio {
+                Studio::All => t!("queue.title"),
+                Studio::Video => t!("queue.title_video"),
+                Studio::Image => t!("queue.title_image"),
+            });
+            ui.label(format!("({})", app.ws.items.len()));
         });
+        // Other pages' jobs share the same runner.
+        let others = app.other_pages_busy();
+        if !others.is_empty() {
+            let list: Vec<String> = others.iter().map(|(s, n)| format!("{} {n}", s.label())).collect();
+            ui.label(RichText::new(t!("queue.other_pages", list = list.join(", "))).small().weak());
+        }
+        // Dropped files of the other kind: offer the matching page.
+        if !app.ws.rejected.is_empty() {
+            let (target, msg) = match app.studio {
+                Studio::Video => (Studio::Image, t!("queue.rejected_images", n = app.ws.rejected.len())),
+                _ => (Studio::Video, t!("queue.rejected_videos", n = app.ws.rejected.len())),
+            };
+            let mut go = false;
+            let mut dismiss = false;
+            egui::Frame::group(ui.style()).show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.colored_label(Color32::from_rgb(230, 170, 60), msg);
+                ui.horizontal(|ui| {
+                    let label = match target {
+                        Studio::Image => t!("queue.open_in_image"),
+                        _ => t!("queue.open_in_video"),
+                    };
+                    go = ui.button(label).clicked();
+                    dismiss = ui.small_button(t!("queue.dismiss")).clicked();
+                });
+            });
+            if go {
+                let files = std::mem::take(&mut app.ws.rejected);
+                app.switch_studio(target);
+                app.add_paths(files);
+            } else if dismiss {
+                app.ws.rejected.clear();
+            }
+        }
         ui.horizontal_wrapped(|ui| {
             if ui
                 .small_button(t!("queue.apply_all"))
@@ -36,7 +75,7 @@ pub fn queue_panel(app: &mut App, ui: &mut egui::Ui) {
             {
                 app.apply_settings(false);
             }
-            let any_checked = app.items.iter().any(|i| i.checked);
+            let any_checked = app.ws.items.iter().any(|i| i.checked);
             if ui
                 .add_enabled(any_checked, egui::Button::new(t!("queue.apply_checked")).small())
                 .on_hover_text(t!("queue.apply_checked_tip"))
@@ -45,19 +84,19 @@ pub fn queue_panel(app: &mut App, ui: &mut egui::Ui) {
                 app.apply_settings(true);
             }
             if ui.small_button(t!("queue.clear_finished")).clicked() {
-                app.items.retain(|i| !matches!(i.status, ItemStatus::Done | ItemStatus::Skipped | ItemStatus::Invalid));
+                app.ws.items.retain(|i| !matches!(i.status, ItemStatus::Done | ItemStatus::Skipped | ItemStatus::Invalid));
                 if app.selected_item().is_none() {
-                    app.selected = app.items.first().map(|i| i.id);
+                    app.ws.selected = app.ws.items.first().map(|i| i.id);
                 }
             }
         });
         ui.separator();
         let mut action = None;
-        let current = app.config.settings.clone();
+        let current = app.cur_settings().clone();
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-            let n = app.items.len();
-            for (idx, item) in app.items.iter_mut().enumerate() {
-                let selected = app.selected == Some(item.id);
+            let n = app.ws.items.len();
+            for (idx, item) in app.ws.items.iter_mut().enumerate() {
+                let selected = app.ws.selected == Some(item.id);
                 let frame = egui::Frame::group(ui.style()).fill(if selected {
                     ui.visuals().selection.bg_fill.gamma_multiply(0.35)
                 } else {
@@ -148,12 +187,12 @@ pub fn queue_panel(app: &mut App, ui: &mut egui::Ui) {
         });
         match action {
             Some(Action::Select(id)) => {
-                app.selected = Some(id);
-                app.player = None;
-                app.scrub_time = 0.0;
-                app.preview_note.clear();
-                app.preview_error = None;
-                app.canvas.clear();
+                app.ws.selected = Some(id);
+                app.ws.player = None;
+                app.ws.scrub_time = 0.0;
+                app.ws.preview_note.clear();
+                app.ws.preview_error = None;
+                app.ws.canvas.clear();
                 if app.config.auto_preview {
                     app.mark_preview_dirty();
                 }
@@ -161,7 +200,7 @@ pub fn queue_panel(app: &mut App, ui: &mut egui::Ui) {
             Some(Action::Remove(id)) => app.remove_item(id),
             Some(Action::Move(id, d)) => app.move_item(id, d),
             Some(Action::OpenOutput(id)) => {
-                if let Some(o) = app.items.iter().find(|i| i.id == id).and_then(|i| i.output.clone())
+                if let Some(o) = app.ws.items.iter().find(|i| i.id == id).and_then(|i| i.output.clone())
                     && let Some(dir) = o.parent() {
                         super::open_path(dir);
                     }

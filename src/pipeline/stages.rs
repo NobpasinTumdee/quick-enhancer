@@ -36,6 +36,8 @@ pub struct StagePlan {
     pub backend: UpscaleBackend,
     pub denoise: f32,
     pub sharpen: SharpenParams,
+    /// Local contrast strength (0 = off), applied after sharpening.
+    pub clarity: f32,
     /// Vulkan index, `None` = CPU.
     pub gpu: Option<u32>,
     pub device_label: String,
@@ -96,6 +98,7 @@ impl StagePlan {
                 amount: s.unsharp_amount,
                 threshold: s.unsharp_threshold,
             },
+            clarity: s.clarity,
             gpu: gpu.map(|g| g.index),
             device_label,
             resources,
@@ -147,7 +150,7 @@ impl StagePlan {
             } else {
                 img
             };
-            match self.sharpen.mode {
+            let img = match self.sharpen.mode {
                 SharpenMode::Off => img,
                 SharpenMode::Cas => filters::cas(&img, self.sharpen.cas_strength),
                 SharpenMode::Unsharp => filters::unsharp(
@@ -156,6 +159,11 @@ impl StagePlan {
                     self.sharpen.amount,
                     self.sharpen.threshold,
                 ),
+            };
+            if self.clarity > 0.0 {
+                filters::clarity(&img, self.clarity)
+            } else {
+                img
             }
         })
     }

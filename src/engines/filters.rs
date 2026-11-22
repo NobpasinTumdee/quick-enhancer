@@ -5,6 +5,8 @@
 //! * [`denoise`] — 5×5 bilateral filter with a luma-difference range kernel. Chosen because it
 //!   is edge-preserving, single-pass and O(25·N): ~10–40 ms for a 1080p frame on a desktop CPU,
 //!   so it keeps up with video. NL-means would be 10–50× slower for similar strength.
+//! * [`clarity`] — local contrast: large-radius unsharp mask on luma only. The blur is three
+//!   running-sum box passes (≈ Gaussian), so the cost is O(N) whatever the radius.
 
 use image::RgbImage;
 use rayon::prelude::*;
@@ -178,6 +180,77 @@ pub fn denoise(img: &RgbImage, strength: f32) -> RgbImage {
     RgbImage::from_raw(w, h, out).expect("same size")
 }
 
+/// One horizontal + vertical running-sum box blur pass (radius `r`) over a plane.
+fn box_pass(src: &[f32], w: usize, h: usize, r: usize) -> Vec<f32> {
+    let norm = 1.0 / (2 * r + 1) as f32;
+    let mut tmp = vec![0f32; src.len()];
+    tmp.par_chunks_mut(w).enumerate().for_each(|(y, row)| {
+        let line = &src[y * w..(y + 1) * w];
+        let at = |i: i64| line[i.clamp(0, w as i64 - 1) as usize];
+        let mut acc: f32 = (-(r as i64)..=r as i64).map(at).sum();
+        for (x, o) in row.iter_mut().enumerate() {
+            *o = acc * norm;
+            acc += at(x as i64 + r as i64 + 1) - at(x as i64 - r as i64);
+        }
+    });
+    let mut out = vec![0f32; src.len()];
+    // Vertical pass, column blocks processed in parallel by rows of output via transposed
+    // indexing: compute per column with a running sum.
+    let cols: Vec<Vec<f32>> = (0..w)
+        .into_par_iter()
+        .map(|x| {
+            let at = |i: i64| tmp[i.clamp(0, h as i64 - 1) as usize * w + x];
+            let mut acc: f32 = (-(r as i64)..=r as i64).map(at).sum();
+            let mut col = Vec::with_capacity(h);
+            for y in 0..h {
+                col.push(acc * norm);
+                acc += at(y as i64 + r as i64 + 1) - at(y as i64 - r as i64);
+            }
+            col
+        })
+        .collect();
+    for (x, col) in cols.iter().enumerate() {
+        for (y, v) in col.iter().enumerate() {
+            out[y * w + x] = *v;
+        }
+    }
+    out
+}
+
+/// Local contrast / "clarity". `strength` 0..=1. Boosts mid-frequency luma detail
+/// (σ ≈ 1.2 % of the short side, at least 6 px) with a soft clamp against halos; colour is
+/// kept by adding the same luma delta to R, G and B.
+pub fn clarity(img: &RgbImage, strength: f32) -> RgbImage {
+    let (w, h) = img.dimensions();
+    if strength <= 0.0 || w < 8 || h < 8 {
+        return img.clone();
+    }
+    let (wu, hu) = (w as usize, h as usize);
+    let sigma = (w.min(h) as f32 * 0.012).max(6.0);
+    // Box width for 3 passes ≈ Gaussian σ: w = sqrt(12σ²/3 + 1).
+    let r = ((((12.0 * sigma * sigma / 3.0) + 1.0).sqrt() - 1.0) / 2.0).round().max(1.0) as usize;
+    let r = r.min(wu.min(hu) / 2).max(1);
+    let src = img.as_raw();
+    let luma: Vec<f32> = src
+        .par_chunks(3)
+        .map(|p| 0.299 * p[0] as f32 + 0.587 * p[1] as f32 + 0.114 * p[2] as f32)
+        .collect();
+    let mut blur = box_pass(&luma, wu, hu, r);
+    blur = box_pass(&blur, wu, hu, r);
+    blur = box_pass(&blur, wu, hu, r);
+    let amount = strength.clamp(0.0, 1.0) * 1.5;
+    let mut out = vec![0u8; src.len()];
+    out.par_chunks_mut(3).enumerate().for_each(|(i, o)| {
+        let d = luma[i] - blur[i];
+        // Soft clamp: large differences (strong edges) are boosted less → fewer halos.
+        let delta = amount * d / (1.0 + d.abs() / 48.0);
+        for c in 0..3 {
+            o[c] = (src[i * 3 + c] as f32 + delta).round().clamp(0.0, 255.0) as u8;
+        }
+    });
+    RgbImage::from_raw(w, h, out).expect("same size")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -217,6 +290,33 @@ mod tests {
         assert_eq!(unsharp(&f, 1.0, 2.0, 0), f);
         // Huge threshold → nothing changes.
         assert_eq!(unsharp(&e, 1.0, 1.0, 255), e);
+    }
+
+    #[test]
+    fn clarity_keeps_flat_and_boosts_local_contrast() {
+        let f = flat(64, 64, 120);
+        assert_eq!(clarity(&f, 1.0), f);
+        assert_eq!(clarity(&step_edge(64, 64), 0.0), step_edge(64, 64));
+        // A soft ramp gets steeper around its middle.
+        let ramp = RgbImage::from_fn(128, 64, |x, _| {
+            let v = (100.0 + 40.0 * ((x as f32 - 64.0) / 20.0).tanh()) as u8;
+            image::Rgb([v, v, v])
+        });
+        let c = clarity(&ramp, 1.0);
+        let d0 = ramp.get_pixel(74, 32)[0] as i32 - ramp.get_pixel(54, 32)[0] as i32;
+        let d1 = c.get_pixel(74, 32)[0] as i32 - c.get_pixel(54, 32)[0] as i32;
+        assert!(d1 > d0, "{d1} vs {d0}");
+        // Grey stays grey (luma-only change).
+        let p = c.get_pixel(70, 32);
+        assert_eq!((p[0], p[1]), (p[1], p[2]));
+    }
+
+    #[test]
+    fn clarity_is_fast_on_4k() {
+        let img = step_edge(3840, 2160);
+        let t = std::time::Instant::now();
+        let _ = clarity(&img, 0.5);
+        assert!(t.elapsed().as_secs_f64() < 3.0, "{:?}", t.elapsed());
     }
 
     #[test]

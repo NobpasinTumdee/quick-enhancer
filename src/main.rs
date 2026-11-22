@@ -50,7 +50,7 @@ fn main() -> anyhow::Result<()> {
         }
     }
     // Remove temp folders left by crashed / killed runs (current and pre-2.0 names).
-    let custom = config.settings.video.temp_dir.clone();
+    let custom = config.machine.temp_dir.clone();
     for c in [None, custom.as_deref()] {
         cleanup_stale(&temp_root(c));
         cleanup_stale(&legacy_temp_root(c));

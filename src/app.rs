@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
-use crate::config::{Config, JobSettings, OverwritePolicy};
+use crate::config::{Config, JobSettings, OverwritePolicy, Studio};
 use crate::devices::{self, GpuInfo};
 use crate::logging::UiLog;
 use crate::media::encoders::{self, EncoderAvailability};
@@ -27,8 +27,75 @@ use crate::t;
 /// Main window page.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Page {
+    /// All-in-one (the 2.0 queue page).
     Queue,
+    Video,
+    Image,
+    Editor,
     Outputs,
+    Settings,
+}
+
+impl Page {
+    pub fn studio(self) -> Option<Studio> {
+        match self {
+            Page::Queue => Some(Studio::All),
+            Page::Video => Some(Studio::Video),
+            Page::Image => Some(Studio::Image),
+            _ => None,
+        }
+    }
+    pub fn of(s: Studio) -> Page {
+        match s {
+            Studio::All => Page::Queue,
+            Studio::Video => Page::Video,
+            Studio::Image => Page::Image,
+        }
+    }
+}
+
+/// Inputs + preview state of one studio page (All-in-one / Video / Image).
+pub struct Workspace {
+    pub items: Vec<QueueItem>,
+    pub selected: Option<u64>,
+    pub canvas: PreviewCanvas,
+    pub player: Option<SamplePlayer>,
+    pub preview_note: String,
+    pub preview_error: Option<String>,
+    pub preview_dirty: Option<Instant>,
+    pub last_preview: Option<(u64, JobSettings, u64)>,
+    pub scrub_time: f64,
+    pub preview_secs: f64,
+    /// Dropped files of the wrong kind for this page (offered to the other page).
+    pub rejected: Vec<PathBuf>,
+}
+
+impl Workspace {
+    pub fn new() -> Workspace {
+        Workspace {
+            items: Vec::new(),
+            selected: None,
+            canvas: PreviewCanvas::new(),
+            player: None,
+            preview_note: String::new(),
+            preview_error: None,
+            preview_dirty: None,
+            last_preview: None,
+            scrub_time: 0.0,
+            preview_secs: 0.0,
+            rejected: Vec::new(),
+        }
+    }
+
+    pub fn selected_item(&self) -> Option<&QueueItem> {
+        self.selected.and_then(|id| self.items.iter().find(|i| i.id == id))
+    }
+}
+
+impl Default for Workspace {
+    fn default() -> Self {
+        Workspace::new()
+    }
 }
 
 /// How the app was started.
@@ -76,6 +143,8 @@ pub struct QueueItem {
     pub status: ItemStatus,
     /// `None` = follow the current settings; `Some` = pinned snapshot ("Apply settings").
     pub settings: Option<JobSettings>,
+    /// Page the item was added on (its settings come from that page).
+    pub origin: Studio,
     pub checked: bool,
     pub output: Option<PathBuf>,
     pub message: String,
@@ -117,20 +186,14 @@ pub struct App {
     pub preview: PreviewWorker,
     pub ui_log: UiLog,
 
-    pub items: Vec<QueueItem>,
+    /// Active studio page's workspace; the other two are parked in `parked`.
+    pub ws: Workspace,
+    parked: [Option<Workspace>; 3],
+    /// Studio the active workspace belongs to (the last studio page shown).
+    pub studio: Studio,
     next_id: u64,
-    pub selected: Option<u64>,
     probe_tx: Sender<(u64, PathBuf)>,
     probe_rx: Receiver<ProbeDone>,
-
-    pub canvas: PreviewCanvas,
-    pub player: Option<SamplePlayer>,
-    pub preview_note: String,
-    pub preview_error: Option<String>,
-    pub preview_dirty: Option<Instant>,
-    last_preview: Option<(u64, JobSettings, u64)>,
-    pub scrub_time: f64,
-    pub preview_secs: f64,
 
     pub toasts: Vec<(Instant, String)>,
     pub overwrite_prompt: Option<OverwritePrompt>,
@@ -281,19 +344,12 @@ impl App {
             runner,
             preview,
             ui_log,
-            items: Vec::new(),
+            ws: Workspace::new(),
+            parked: [None, None, None],
+            studio: Studio::All,
             next_id: 1,
-            selected: None,
             probe_tx,
             probe_rx,
-            canvas: PreviewCanvas::new(),
-            player: None,
-            preview_note: String::new(),
-            preview_error: None,
-            preview_dirty: None,
-            last_preview: None,
-            scrub_time: 0.0,
-            preview_secs: 0.0,
             toasts: Vec::new(),
             overwrite_prompt: None,
             queue_total: 0,
@@ -326,7 +382,7 @@ impl App {
     }
 
     pub fn active_gpu(&self) -> Option<&GpuInfo> {
-        devices::resolve(self.config.settings.compute, &self.env.gpus)
+        devices::resolve(self.config.machine.compute, &self.env.gpus)
     }
 
     pub fn sync_monitor_gpu(&self) {
@@ -340,8 +396,71 @@ impl App {
     }
 
     pub fn selected_item(&self) -> Option<&QueueItem> {
-        self.selected
-            .and_then(|id| self.items.iter().find(|i| i.id == id))
+        self.ws.selected_item()
+    }
+
+    /// Settings of the active studio page.
+    pub fn cur_settings(&self) -> &JobSettings {
+        self.config.settings_for(self.studio)
+    }
+
+    /// Show a studio page, swapping its workspace in.
+    pub fn switch_studio(&mut self, to: Studio) {
+        self.page = Page::of(to);
+        if to == self.studio {
+            return;
+        }
+        self.preview.cancel();
+        let mut old = std::mem::replace(
+            &mut self.ws,
+            self.parked[to.index()].take().unwrap_or_default(),
+        );
+        // A parked sample player would keep playing audio.
+        old.player = None;
+        old.preview_dirty = None;
+        old.last_preview = None;
+        self.parked[self.studio.index()] = Some(old);
+        self.studio = to;
+        if self.config.auto_preview && self.ws.selected.is_some() {
+            self.mark_preview_dirty();
+        }
+    }
+
+    /// Queue item by id, in whichever page holds it.
+    pub fn item_mut(&mut self, id: u64) -> Option<&mut QueueItem> {
+        if let Some(i) = self.ws.items.iter_mut().find(|i| i.id == id) {
+            return Some(i);
+        }
+        self.parked
+            .iter_mut()
+            .flatten()
+            .flat_map(|w| w.items.iter_mut())
+            .find(|i| i.id == id)
+    }
+
+    pub fn item(&self, id: u64) -> Option<&QueueItem> {
+        self.ws
+            .items
+            .iter()
+            .chain(self.parked.iter().flatten().flat_map(|w| w.items.iter()))
+            .find(|i| i.id == id)
+    }
+
+    /// (studio, pending + running) counts of items in other pages.
+    pub fn other_pages_busy(&self) -> Vec<(Studio, usize)> {
+        Studio::ALL
+            .iter()
+            .filter(|s| **s != self.studio)
+            .filter_map(|s| {
+                let w = self.parked[s.index()].as_ref()?;
+                let n = w
+                    .items
+                    .iter()
+                    .filter(|i| i.status == ItemStatus::Running || (i.status == ItemStatus::Pending && i.output.is_some()))
+                    .count();
+                (n > 0).then_some((*s, n))
+            })
+            .collect()
     }
 
     // ---- input ------------------------------------------------------------------------
@@ -355,11 +474,18 @@ impl App {
                 files.push(p);
             }
         }
-        let existing: HashSet<PathBuf> = self.items.iter().map(|i| i.path.clone()).collect();
+        let existing: HashSet<PathBuf> = self.ws.items.iter().map(|i| i.path.clone()).collect();
         let mut skipped = Vec::new();
+        let mut rejected = Vec::new();
         let mut added = 0;
         for f in files {
             if existing.contains(&f) {
+                continue;
+            }
+            if let Some(k) = detect_kind(&f)
+                && !self.studio.accepts(k)
+            {
+                rejected.push(f);
                 continue;
             }
             if detect_kind(&f).is_none() {
@@ -372,25 +498,29 @@ impl App {
             }
             let id = self.next_id;
             self.next_id += 1;
-            self.items.push(QueueItem {
+            self.ws.items.push(QueueItem {
                 id,
                 path: f.clone(),
                 info: None,
                 thumb: None,
                 status: ItemStatus::Probing,
                 settings: None,
+                origin: self.studio,
                 checked: false,
                 output: None,
                 message: String::new(),
             });
             let _ = self.probe_tx.send((id, f));
             added += 1;
-            if self.selected.is_none() {
-                self.selected = Some(id);
+            if self.ws.selected.is_none() {
+                self.ws.selected = Some(id);
             }
         }
         if added > 0 {
             self.toast(t!("toast.added", n = added));
+        }
+        if !rejected.is_empty() {
+            self.ws.rejected = rejected;
         }
         if !skipped.is_empty() {
             let shown: Vec<_> = skipped.iter().take(5).cloned().collect();
@@ -403,27 +533,27 @@ impl App {
     }
 
     pub fn remove_item(&mut self, id: u64) {
-        self.items
+        self.ws.items
             .retain(|i| i.id != id || i.status == ItemStatus::Running);
-        if self.selected == Some(id) {
-            self.selected = self.items.first().map(|i| i.id);
-            self.canvas.clear();
-            self.player = None;
-            self.last_preview = None;
+        if self.ws.selected == Some(id) {
+            self.ws.selected = self.ws.items.first().map(|i| i.id);
+            self.ws.canvas.clear();
+            self.ws.player = None;
+            self.ws.last_preview = None;
         }
     }
 
     pub fn move_item(&mut self, id: u64, delta: isize) {
-        if let Some(pos) = self.items.iter().position(|i| i.id == id) {
-            let np = (pos as isize + delta).clamp(0, self.items.len() as isize - 1) as usize;
-            self.items.swap(pos, np);
+        if let Some(pos) = self.ws.items.iter().position(|i| i.id == id) {
+            let np = (pos as isize + delta).clamp(0, self.ws.items.len() as isize - 1) as usize;
+            self.ws.items.swap(pos, np);
         }
     }
 
     pub fn apply_settings(&mut self, only_checked: bool) {
-        let s = self.config.settings.clone();
+        let s = self.cur_settings().clone();
         let mut n = 0;
-        for i in &mut self.items {
+        for i in &mut self.ws.items {
             if i.status != ItemStatus::Running && (!only_checked || i.checked) {
                 i.settings = Some(s.clone());
                 n += 1;
@@ -439,7 +569,7 @@ impl App {
         let s = &item
             .settings
             .as_ref()
-            .unwrap_or(&self.config.settings)
+            .unwrap_or(self.config.settings_for(item.origin))
             .output;
         let dir = s
             .folder
@@ -450,7 +580,7 @@ impl App {
             MediaKind::Image => resolve_format(s.image_format, &item.path).ext(),
             MediaKind::Video => s.container.ext(),
         };
-        Some(dir.join(format!("{stem}_enhanced.{ext}")))
+        Some(dir.join(format!("{stem}{}.{ext}", s.safe_suffix())))
     }
 
     pub fn start_queue(&mut self) {
@@ -458,6 +588,7 @@ impl App {
         let mut conflicts = Vec::new();
         let mut used: HashSet<PathBuf> = HashSet::new();
         let ids: Vec<u64> = self
+            .ws
             .items
             .iter()
             .filter(|i| {
@@ -469,7 +600,7 @@ impl App {
             .map(|i| i.id)
             .collect();
         for id in ids {
-            let Some(item) = self.items.iter().find(|i| i.id == id) else {
+            let Some(item) = self.ws.items.iter().find(|i| i.id == id) else {
                 continue;
             };
             let Some(mut out) = self.output_path_for(item) else {
@@ -484,7 +615,7 @@ impl App {
                 match item
                     .settings
                     .as_ref()
-                    .unwrap_or(&self.config.settings)
+                    .unwrap_or(self.config.settings_for(item.origin))
                     .output
                     .overwrite
                 {
@@ -549,9 +680,10 @@ impl App {
 
     fn submit(&mut self, jobs: Vec<(u64, PathBuf)>) {
         let mut specs = Vec::new();
-        let current = self.config.settings.clone();
+        let current = self.cur_settings().clone();
+        let config = &self.config;
         for (id, out) in jobs {
-            if let Some(item) = self.items.iter_mut().find(|i| i.id == id) {
+            if let Some(item) = self.ws.items.iter_mut().find(|i| i.id == id) {
                 let Some(info) = item.info.clone() else {
                     continue;
                 };
@@ -561,7 +693,7 @@ impl App {
                 specs.push(JobSpec {
                     id,
                     info,
-                    settings: item.settings.as_ref().unwrap_or(&current).effective(),
+                    settings: config.job(item.settings.as_ref().unwrap_or(&current)),
                     output: out,
                 });
             }
@@ -575,7 +707,7 @@ impl App {
     }
 
     fn set_status(&mut self, id: u64, st: ItemStatus, msg: String) {
-        if let Some(i) = self.items.iter_mut().find(|i| i.id == id) {
+        if let Some(i) = self.item_mut(id) {
             i.status = st;
             i.message = msg;
         }
@@ -592,21 +724,21 @@ impl App {
         let Some((id, info)) = self.selected_info() else {
             return;
         };
-        let settings = self.config.settings.effective();
-        let t_ms = (self.scrub_time * 1000.0) as u64;
+        let settings = self.config.job(self.cur_settings());
+        let t_ms = (self.ws.scrub_time * 1000.0) as u64;
         let key = (id, still_key(&settings), t_ms);
-        if !force && self.last_preview.as_ref() == Some(&key) {
+        if !force && self.ws.last_preview.as_ref() == Some(&key) {
             return;
         }
-        self.last_preview = Some(key);
-        self.player = None;
-        self.preview_error = None;
+        self.ws.last_preview = Some(key);
+        self.ws.player = None;
+        self.ws.preview_error = None;
         self.preview.request(PreviewRequest {
             item: id,
             info,
             settings,
             kind: PreviewKind::Still {
-                time: self.scrub_time,
+                time: self.ws.scrub_time,
             },
         });
     }
@@ -615,14 +747,14 @@ impl App {
         let Some((id, info)) = self.selected_info() else {
             return;
         };
-        self.preview_error = None;
-        self.last_preview = None;
+        self.ws.preview_error = None;
+        self.ws.last_preview = None;
         self.preview.request(PreviewRequest {
             item: id,
             info,
-            settings: self.config.settings.effective(),
+            settings: self.config.job(self.cur_settings()),
             kind: PreviewKind::Sample {
-                start: self.scrub_time,
+                start: self.ws.scrub_time,
                 dur: self.config.sample_seconds as f64,
             },
         });
@@ -636,29 +768,29 @@ impl App {
         let (Some(info), Some(out)) = (item.info.clone(), item.output.clone()) else {
             return;
         };
-        self.player = None;
-        self.preview_error = None;
-        self.last_preview = None;
+        self.ws.player = None;
+        self.ws.preview_error = None;
+        self.ws.last_preview = None;
         self.preview.request(PreviewRequest {
             item: id,
             info,
-            settings: self.config.settings.effective(),
+            settings: self.config.job(self.cur_settings()),
             kind: PreviewKind::CompareOutput {
                 output: out,
-                time: self.scrub_time,
+                time: self.ws.scrub_time,
             },
         });
     }
 
     pub fn mark_preview_dirty(&mut self) {
-        self.preview_dirty = Some(Instant::now());
+        self.ws.preview_dirty = Some(Instant::now());
     }
 
     // ---- event pumping ----------------------------------------------------------------
 
     fn pump(&mut self, ctx: &egui::Context) {
         while let Ok(p) = self.probe_rx.try_recv() {
-            if let Some(item) = self.items.iter_mut().find(|i| i.id == p.id) {
+            if let Some(item) = self.ws.items.iter_mut().find(|i| i.id == p.id) {
                 match p.result {
                     Ok(info) => {
                         item.status = ItemStatus::Pending;
@@ -680,7 +812,7 @@ impl App {
                         egui::TextureOptions::LINEAR,
                     ));
                 }
-                if Some(p.id) == self.selected && self.config.auto_preview {
+                if Some(p.id) == self.ws.selected && self.config.auto_preview {
                     self.mark_preview_dirty();
                 }
             }
@@ -701,7 +833,7 @@ impl App {
                                 .map(|t| t.elapsed().as_secs_f64())
                                 .unwrap_or(0.0);
                             self.record_history(id, &output, secs);
-                            if let Some(i) = self.items.iter_mut().find(|i| i.id == id) {
+                            if let Some(i) = self.item_mut(id) {
                                 i.status = ItemStatus::Done;
                                 i.output = Some(output);
                                 i.message = note;
@@ -727,11 +859,11 @@ impl App {
                     note,
                     secs,
                 } => {
-                    if Some(item) == self.selected {
-                        self.canvas.set_images(ctx, &before, &after);
-                        self.preview_note = note;
-                        self.preview_secs = secs;
-                        self.player = None;
+                    if Some(item) == self.ws.selected {
+                        self.ws.canvas.set_images(ctx, &before, &after);
+                        self.ws.preview_note = note;
+                        self.ws.preview_secs = secs;
+                        self.ws.player = None;
                     }
                 }
                 PreviewResult::Sample {
@@ -745,23 +877,23 @@ impl App {
                     audio,
                     note,
                 } => {
-                    if Some(item) == self.selected {
+                    if Some(item) == self.ws.selected {
                         let c = &mut self.config;
                         let prefs = crate::preview::player::PlayerPrefs {
                             volume: &mut c.preview_volume,
                             muted: &mut c.preview_muted,
                             looping: &mut c.preview_loop,
                         };
-                        self.player = Some(SamplePlayer::new(
+                        self.ws.player = Some(SamplePlayer::new(
                             original, enhanced, src_fps, out_fps, src_size, out_size, audio,
                             note, &prefs,
                         ));
                     }
                 }
                 PreviewResult::Error { item, msg } => {
-                    if Some(item) == self.selected {
+                    if Some(item) == self.ws.selected {
                         tracing::error!("preview failed: {msg}");
-                        self.preview_error = Some(msg);
+                        self.ws.preview_error = Some(msg);
                     }
                 }
             }
@@ -783,9 +915,9 @@ impl App {
             self.reload_tools(ctx);
         }
         // Debounced re-render of the still preview.
-        if let Some(t) = self.preview_dirty {
+        if let Some(t) = self.ws.preview_dirty {
             if t.elapsed() >= Duration::from_millis(400) {
-                self.preview_dirty = None;
+                self.ws.preview_dirty = None;
                 self.request_still_preview(false);
             } else {
                 ctx.request_repaint_after(Duration::from_millis(100));
@@ -805,26 +937,35 @@ impl App {
 }
 
 impl App {
-    /// Folder the Outputs page scans (`None` = outputs go next to each source).
-    pub fn outputs_folder(&self) -> Option<PathBuf> {
-        self.config.settings.output.folder.clone()
+    /// Folders the Outputs page scans: the output folder of every page that has one
+    /// (pages writing next to the source are covered by history only).
+    pub fn outputs_folders(&self) -> Vec<PathBuf> {
+        let mut v: Vec<PathBuf> = Vec::new();
+        for s in Studio::ALL {
+            if let Some(f) = self.config.settings_for(s).output.folder.clone()
+                && !v.iter().any(|x| crate::history::path_key(x) == crate::history::path_key(&f))
+            {
+                v.push(f);
+            }
+        }
+        v
     }
 
     pub fn refresh_outputs(&mut self, ctx: &egui::Context) {
-        let folder = self.outputs_folder();
-        self.outputs.refresh(&self.paths.history_file, folder, ctx);
+        let folders = self.outputs_folders();
+        self.outputs.refresh(&self.paths.history_file, folders, ctx);
     }
 
     /// Append a finished job to `history.json` (probing the output off the UI thread).
     fn record_history(&mut self, id: u64, output: &Path, processing_secs: f64) {
-        let Some(item) = self.items.iter().find(|i| i.id == id) else {
+        let Some(item) = self.item(id) else {
             return;
         };
-        let settings = item
-            .settings
-            .as_ref()
-            .unwrap_or(&self.config.settings)
-            .effective();
+        let settings = self.config.job(
+            item.settings
+                .as_ref()
+                .unwrap_or(self.config.settings_for(item.origin)),
+        );
         let source = item.path.clone();
         let src_info = item.info.clone();
         let profile = if settings.upscale_on {
@@ -920,10 +1061,16 @@ impl App {
     /// Outputs page → "Compare with source": switch to the queue and show the exported
     /// file against its source.
     pub fn compare_with_source(&mut self, source: PathBuf, output: PathBuf) {
-        if !self.items.iter().any(|i| i.path == source) {
+        let studio = match detect_kind(&source) {
+            Some(MediaKind::Video) => Studio::Video,
+            Some(MediaKind::Image) => Studio::Image,
+            None => Studio::All,
+        };
+        self.switch_studio(studio);
+        if !self.ws.items.iter().any(|i| i.path == source) {
             self.add_paths(vec![source.clone()]);
         }
-        let Some(item) = self.items.iter_mut().find(|i| i.path == source) else {
+        let Some(item) = self.ws.items.iter_mut().find(|i| i.path == source) else {
             return;
         };
         item.output = Some(output.clone());
@@ -932,7 +1079,7 @@ impl App {
         let info = known
             .clone()
             .or_else(|| probe::probe(self.env.tools.ffprobe.as_deref(), &source).ok());
-        if let Some(i) = self.items.iter_mut().find(|i| i.id == id) {
+        if let Some(i) = self.ws.items.iter_mut().find(|i| i.id == id) {
             if i.info.is_none() {
                 i.info = info.clone();
             }
@@ -940,20 +1087,19 @@ impl App {
                 i.status = ItemStatus::Done;
             }
         }
-        self.page = Page::Queue;
-        self.selected = Some(id);
-        self.player = None;
-        self.canvas.clear();
+        self.ws.selected = Some(id);
+        self.ws.player = None;
+        self.ws.canvas.clear();
         let Some(info) = info else {
-            self.preview_error = Some(t!("outputs.source_unreadable"));
+            self.ws.preview_error = Some(t!("outputs.source_unreadable"));
             return;
         };
-        self.preview_error = None;
-        self.last_preview = None;
+        self.ws.preview_error = None;
+        self.ws.last_preview = None;
         self.preview.request(PreviewRequest {
             item: id,
             info,
-            settings: self.config.settings.effective(),
+            settings: self.config.job(self.cur_settings()),
             kind: PreviewKind::CompareOutput { output, time: 0.0 },
         });
     }
@@ -1083,11 +1229,24 @@ impl eframe::App for App {
                 .collect()
         });
         if !dropped.is_empty() {
-            self.add_paths(dropped);
+            match self.page {
+
+                Page::Queue | Page::Video | Page::Image => self.add_paths(dropped),
+                // Other pages: add to the page matching the first file.
+                _ => {
+                    let to = match dropped.iter().find_map(|p| detect_kind(p)) {
+                        Some(MediaKind::Video) => Studio::Video,
+                        Some(MediaKind::Image) => Studio::Image,
+                        None => self.studio,
+                    };
+                    self.switch_studio(to);
+                    self.add_paths(dropped);
+                }
+            }
         }
         // Space toggles before/after.
         if !ctx.egui_wants_keyboard_input() && ctx.input(|i| i.key_pressed(egui::Key::Space)) {
-            self.canvas.toggle();
+            self.ws.canvas.toggle();
         }
 
         if self.tools_only {
@@ -1104,7 +1263,19 @@ impl eframe::App for App {
                 crate::ui::settings::settings_panel(self, ui);
                 crate::ui::preview_panel(self, ui);
             }
+            Page::Video => {
+                crate::ui::queue::queue_panel(self, ui);
+                crate::ui::studio::video_panel(self, ui);
+                crate::ui::preview_panel(self, ui);
+            }
+            Page::Image => {
+                crate::ui::queue::queue_panel(self, ui);
+                crate::ui::studio::image_panel(self, ui);
+                crate::ui::preview_panel(self, ui);
+            }
+            Page::Editor => {}
             Page::Outputs => crate::ui::outputs::outputs_page(self, ui),
+            Page::Settings => crate::ui::settings_page::settings_page(self, ui),
         }
         crate::ui::setup::setup_window(self, &ctx);
         crate::ui::tools::tools_window(self, &ctx);

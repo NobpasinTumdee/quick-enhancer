@@ -5,7 +5,7 @@ use egui::{Color32, RichText};
 
 use crate::app::App;
 use crate::config::{
-    ComputeDevice, Container, EncoderChoice, FrameGenMode, ImageFormat, OverwritePolicy, Preset,
+    ComputeDevice, Container, EncoderChoice, Studio, FrameGenMode, ImageFormat, OverwritePolicy, Preset,
     Priority, Profile, ScaleMode, SharpenMode, TileSize,
 };
 use crate::engines::{choose_backend, profile_unavailable};
@@ -20,7 +20,7 @@ use crate::util::human_bytes;
 
 const WARN: Color32 = Color32::from_rgb(230, 170, 60);
 
-fn hint(ui: &mut egui::Ui, text: impl Into<String>) {
+pub fn hint(ui: &mut egui::Ui, text: impl Into<String>) {
     ui.label(RichText::new(text.into()).small().weak());
 }
 
@@ -29,7 +29,7 @@ pub fn settings_panel(app: &mut App, ui: &mut egui::Ui) {
         ui.heading(t!("settings.title"));
         hint(ui, t!("settings.intro"));
         ui.separator();
-        let before = app.config.settings.clone();
+        let before = (app.cur_settings().clone(), app.config.machine.clone());
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
             switched(app, ui, "sec-upscale", t!("settings.upscaling"), t!("settings.upscaling_off"), |s| &mut s.upscale_on, enhancement);
             switched(app, ui, "sec-framegen", t!("settings.framegen"), t!("settings.framegen_off"), |s| &mut s.framegen_on, framegen);
@@ -37,24 +37,28 @@ pub fn settings_panel(app: &mut App, ui: &mut egui::Ui) {
             device(app, ui);
             output(app, ui);
             video(app, ui);
-            application(app, ui);
-            about(app, ui);
+            ui.add_space(6.0);
+            hint(ui, t!("settings.app_moved"));
         });
-        let after = &app.config.settings;
-        if *after != before {
-            if after.compute != before.compute {
-                app.sync_monitor_gpu();
-            }
-            if app.config.auto_preview && crate::app::still_key(after) != crate::app::still_key(&before) {
-                app.mark_preview_dirty();
-            }
-        }
+        after_edit(app, before);
     });
+}
+
+/// React to settings edits: re-bind the GPU monitor, schedule a preview refresh.
+pub fn after_edit(app: &mut App, before: (crate::config::JobSettings, crate::config::MachineSettings)) {
+    if app.config.machine.compute != before.1.compute {
+        app.sync_monitor_gpu();
+    }
+    let after = app.config.job(app.cur_settings());
+    let before = before.0.with_machine(&before.1).effective();
+    if app.config.auto_preview && crate::app::still_key(&after) != crate::app::still_key(&before) {
+        app.mark_preview_dirty();
+    }
 }
 
 /// Collapsible settings section whose header is an on/off checkbox. When off, the body
 /// stays visible (greyed out) so the values are kept for when it is switched back on.
-fn switch_section(
+pub fn switch_section(
     ui: &mut egui::Ui,
     id: &str,
     title: &str,
@@ -77,7 +81,7 @@ fn switch_section(
 }
 
 /// Run a section body with the switch stored in `get(&mut settings)`.
-fn switched(
+pub fn switched(
     app: &mut App,
     ui: &mut egui::Ui,
     id: &str,
@@ -86,22 +90,24 @@ fn switched(
     get: fn(&mut crate::config::JobSettings) -> &mut bool,
     body: fn(&mut App, &mut egui::Ui),
 ) {
-    let mut on = *get(&mut app.config.settings);
+    let st = app.studio;
+    let mut on = *get(app.config.settings_for_mut(st));
     switch_section(ui, id, &title, &off_note, &mut on, |ui| body(app, ui));
-    *get(&mut app.config.settings) = on;
+    *get(app.config.settings_for_mut(st)) = on;
 }
 
-fn selected_kind(app: &App) -> MediaKind {
+pub fn selected_kind(app: &App) -> MediaKind {
     app.selected_item()
         .and_then(|i| i.kind())
         .unwrap_or(MediaKind::Image)
 }
 
-fn enhancement(app: &mut App, ui: &mut egui::Ui) {
+pub fn enhancement(app: &mut App, ui: &mut egui::Ui) {
     let kind = selected_kind(app);
     let env = app.env.clone();
     let sel_info = app.selected_item().and_then(|i| i.info.clone());
-    let s = &mut app.config.settings;
+    let cpu = crate::devices::resolve(app.config.machine.compute, &env.gpus).is_none();
+    let s = app.config.settings_for_mut(app.studio);
     egui::Grid::new("enh").num_columns(2).show(ui, |ui| {
         ui.label(t!("settings.profile"));
         egui::ComboBox::from_id_salt("profile")
@@ -142,9 +148,10 @@ fn enhancement(app: &mut App, ui: &mut egui::Ui) {
     if let Some(why) = profile_unavailable(s.profile, kind, &env.tools, &env.models) {
         ui.colored_label(WARN, format!("⚠ {why}"));
     }
-    if let Some(info) = sel_info.filter(|_| s.upscale_on) {
-        let cpu = crate::devices::resolve(s.compute, &env.gpus).is_none();
-        if let Ok(b) = choose_backend(s.profile, info.kind, &env.tools, &env.models, cpu) {
+    if let Some(info) = sel_info.filter(|_| s.upscale_on)
+        && let Ok(b) = choose_backend(s.profile, info.kind, &env.tools, &env.models, cpu)
+    {
+        {
             let p = plan_scale(
                 info.width,
                 info.height,
@@ -163,10 +170,11 @@ fn enhancement(app: &mut App, ui: &mut egui::Ui) {
     }
 }
 
-fn framegen(app: &mut App, ui: &mut egui::Ui) {
+pub fn framegen(app: &mut App, ui: &mut egui::Ui) {
     let env = app.env.clone();
     let info = app.selected_item().and_then(|i| i.info.clone());
-    let s = &mut app.config.settings;
+    let adv = crate::ui::studio::advanced(app);
+    let s = app.config.settings_for_mut(app.studio);
     let rife_ok = env.tools.rife.is_some() && !env.models.rife.is_empty();
     if !rife_ok {
         ui.colored_label(WARN, t!("settings.rife_needed"));
@@ -207,6 +215,9 @@ fn framegen(app: &mut App, ui: &mut egui::Ui) {
             ui.label(t!("settings.max_fps"));
             ui.add(egui::DragValue::new(&mut s.max_fps).range(24..=480).suffix(" FPS"));
             ui.end_row();
+            if !adv {
+                return;
+            }
             ui.label(t!("settings.rife_model"));
             egui::ComboBox::from_id_salt("rifemodel")
                 .selected_text(model.as_ref().map(|m| m.name.clone()).unwrap_or_else(|| "—".into()))
@@ -249,8 +260,8 @@ fn framegen(app: &mut App, ui: &mut egui::Ui) {
     hint(ui, t!("settings.framegen_hint"));
 }
 
-fn filters(app: &mut App, ui: &mut egui::Ui) {
-    let s = &mut app.config.settings;
+pub fn filters(app: &mut App, ui: &mut egui::Ui) {
+    let s = app.config.settings_for_mut(app.studio);
     ui.add(egui::Slider::new(&mut s.denoise, 0.0..=1.0).text(t!("settings.denoise")));
     ui.horizontal(|ui| {
         ui.label(t!("settings.sharpen"));
@@ -272,14 +283,14 @@ fn filters(app: &mut App, ui: &mut egui::Ui) {
     hint(ui, t!("settings.filters_hint"));
 }
 
-fn device(app: &mut App, ui: &mut egui::Ui) {
+pub fn device(app: &mut App, ui: &mut egui::Ui) {
     egui::CollapsingHeader::new(RichText::new(t!("settings.device")).strong())
         .id_salt("sec-device")
         .default_open(true)
         .show(ui, |ui| {
         let env = app.env.clone();
         let free_vram = env.free_vram();
-        let s = &mut app.config.settings;
+        let s = &mut app.config.machine;
         let auto_name = crate::devices::auto_select(&env.gpus).map(|g| g.name.clone()).unwrap_or_else(|| "CPU".into());
         let auto_label = t!("settings.auto_device", name = &auto_name);
         let current = match s.compute {
@@ -337,7 +348,7 @@ fn device(app: &mut App, ui: &mut egui::Ui) {
             ui.colored_label(WARN, t!("settings.no_vulkan"));
         }
 
-        let r = effective_resources(s, env.cores);
+        let r = effective_resources(&crate::config::JobSettings::default().with_machine(s), env.cores);
         let tile = resolve_tile(&r, free_vram);
         ui.label(t!(
             "settings.effective",
@@ -403,13 +414,14 @@ fn device(app: &mut App, ui: &mut egui::Ui) {
     });
 }
 
-fn output(app: &mut App, ui: &mut egui::Ui) {
+pub fn output(app: &mut App, ui: &mut egui::Ui) {
     egui::CollapsingHeader::new(RichText::new(t!("settings.output")).strong())
         .id_salt("sec-output")
         .default_open(true)
         .show(ui, |ui| {
         let env = app.env.clone();
-        let s = &mut app.config.settings.output;
+        let st = app.studio;
+        let s = &mut app.config.settings_for_mut(st).output;
         ui.horizontal(|ui| {
             ui.label(t!("settings.folder"));
             let txt = s.folder.as_ref().map(|f| f.display().to_string()).unwrap_or_else(|| t!("settings.next_to_source"));
@@ -439,6 +451,11 @@ fn output(app: &mut App, ui: &mut egui::Ui) {
                 }
             });
             ui.end_row();
+            ui.label(t!("settings.suffix"));
+            ui.add(egui::TextEdit::singleline(&mut s.suffix).desired_width(120.0).hint_text("_enhanced"))
+                .on_hover_text(t!("settings.suffix_tip"));
+            ui.end_row();
+            if st != Studio::Video {
             ui.label(t!("settings.image_format"));
             ui.horizontal(|ui| {
                 ui.selectable_value(&mut s.image_format, ImageFormat::Same, t!("settings.same"));
@@ -450,6 +467,8 @@ fn output(app: &mut App, ui: &mut egui::Ui) {
             ui.label(t!("settings.jpg_quality"));
             ui.add(egui::Slider::new(&mut s.image_quality, 50..=100));
             ui.end_row();
+            }
+            if st != Studio::Image {
             ui.label(t!("settings.container"));
             ui.horizontal(|ui| {
                 ui.selectable_value(&mut s.container, Container::Mp4, "MP4");
@@ -497,24 +516,27 @@ fn output(app: &mut App, ui: &mut egui::Ui) {
                 }
             });
             ui.end_row();
+            }
         });
-        if s.image_format == ImageFormat::Webp {
+        if s.image_format == ImageFormat::Webp && st != Studio::Video {
             hint(ui, t!("settings.webp_hint"));
         }
-        ui.checkbox(&mut s.keep_partial, t!("settings.keep_partial"));
-        hint(ui, t!("settings.audio_hint"));
+        if st != Studio::Image {
+            ui.checkbox(&mut s.keep_partial, t!("settings.keep_partial"));
+            hint(ui, t!("settings.audio_hint"));
+        }
     });
 }
 
-fn video(app: &mut App, ui: &mut egui::Ui) {
+pub fn video(app: &mut App, ui: &mut egui::Ui) {
     egui::CollapsingHeader::new(RichText::new(t!("settings.video_pipeline")).strong())
         .id_salt("sec-video")
         .default_open(false)
         .show(ui, |ui| {
         let info = app.selected_item().and_then(|i| i.info.clone());
         let env = app.env.clone();
-        let st = app.config.settings.effective();
-        let s = &mut app.config.settings.video;
+        let st = app.config.job(app.cur_settings());
+        let s = &mut app.config.machine;
         egui::Grid::new("vid").num_columns(2).show(ui, |ui| {
             ui.label(t!("settings.chunk_size"));
             ui.add(egui::DragValue::new(&mut s.chunk_frames).range(16..=2000).suffix(t!("settings.frames_suffix")));
@@ -567,7 +589,7 @@ fn video(app: &mut App, ui: &mut egui::Ui) {
     });
 }
 
-fn application(app: &mut App, ui: &mut egui::Ui) {
+pub fn application(app: &mut App, ui: &mut egui::Ui) {
     egui::CollapsingHeader::new(RichText::new(t!("settings.application")).strong())
         .id_salt("sec-app")
         .default_open(true)
@@ -622,7 +644,7 @@ fn path_row(ui: &mut egui::Ui, label: String, p: &std::path::Path) {
     ui.end_row();
 }
 
-fn about(app: &mut App, ui: &mut egui::Ui) {
+pub fn about(app: &mut App, ui: &mut egui::Ui) {
     egui::CollapsingHeader::new(RichText::new(t!("settings.about")).strong())
         .id_salt("sec-about")
         .default_open(false)

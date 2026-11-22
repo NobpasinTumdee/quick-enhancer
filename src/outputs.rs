@@ -32,8 +32,8 @@ pub struct OutputsState {
     pub records: Vec<OutputRecord>,
     pub selected: Option<PathBuf>,
     pub search: String,
-    /// Folder that was scanned (`None` = output setting is "next to source").
-    pub folder: Option<PathBuf>,
+    /// Folders that were scanned (empty = every page writes next to its sources).
+    pub folders: Vec<PathBuf>,
     pub scanning: bool,
     pub loaded_once: bool,
     pub confirm_delete: Option<PathBuf>,
@@ -115,7 +115,7 @@ impl OutputsState {
             records: Vec::new(),
             selected: None,
             search: String::new(),
-            folder: None,
+            folders: Vec::new(),
             scanning: false,
             loaded_once: false,
             confirm_delete: None,
@@ -128,21 +128,21 @@ impl OutputsState {
     }
 
     /// Re-read history and rescan `folder` in the background.
-    pub fn refresh(&mut self, history_file: &Path, folder: Option<PathBuf>, ctx: &egui::Context) {
+    pub fn refresh(&mut self, history_file: &Path, folders: Vec<PathBuf>, ctx: &egui::Context) {
         let (tx, rx) = unbounded();
         let hf = history_file.to_path_buf();
-        let f2 = folder.clone();
+        let f2 = folders.clone();
         let ctx = ctx.clone();
         let _ = std::thread::Builder::new()
             .name("outputs-scan".into())
             .spawn(move || {
                 let h = History::load(&hf);
-                let scanned = f2.as_deref().map(history::scan_folder).unwrap_or_default();
+                let scanned: Vec<_> = f2.iter().flat_map(|f| history::scan_folder(f)).collect();
                 let recs = history::merge(&h.entries, &scanned, |p| p.exists());
                 let _ = tx.send(recs);
                 ctx.request_repaint();
             });
-        self.folder = folder;
+        self.folders = folders;
         self.scanning = true;
         self.scan_rx = Some(rx);
     }
