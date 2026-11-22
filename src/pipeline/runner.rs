@@ -130,6 +130,13 @@ impl Runner {
 
     fn run_one(&self, env: &Env, spec: &JobSpec, token: &CancelToken) -> JobOutcome {
         let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| match spec.info.kind {
+            _ if spec.edit.is_some() => crate::editor::run_edit(
+                env,
+                spec.edit.as_deref().expect("checked"),
+                &spec.output,
+                &self.progress,
+                token,
+            ),
             MediaKind::Image => run_image(env, spec, &self.progress, token),
             MediaKind::Video => run_video(
                 env,

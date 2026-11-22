@@ -40,6 +40,8 @@ pub struct MediaInfo {
     pub frames: Option<u64>,
     pub video_codec: Option<String>,
     pub audio_codecs: Vec<String>,
+    /// "channels@sample_rate" of the first audio stream (join compatibility check).
+    pub audio_layout: Option<String>,
     pub subtitle_codecs: Vec<String>,
     pub pix_fmt: Option<String>,
     pub bit_depth: u8,
@@ -115,6 +117,8 @@ struct ProbeJson {
 struct StreamJson {
     codec_type: Option<String>,
     codec_name: Option<String>,
+    channels: Option<u32>,
+    sample_rate: Option<String>,
     width: Option<u32>,
     height: Option<u32>,
     pix_fmt: Option<String>,
@@ -248,6 +252,11 @@ pub fn parse_ffprobe_json(
         frames,
         video_codec: v.codec_name.clone(),
         audio_codecs: codecs_of("audio"),
+        audio_layout: p
+            .streams
+            .iter()
+            .find(|s| s.codec_type.as_deref() == Some("audio"))
+            .map(|s| format!("{}@{}", s.channels.unwrap_or(0), s.sample_rate.as_deref().unwrap_or("?"))),
         subtitle_codecs: codecs_of("subtitle"),
         pix_fmt,
         bit_depth,
@@ -298,6 +307,7 @@ pub fn probe_image(path: &Path) -> Result<MediaInfo, ProbeError> {
         frames: None,
         video_codec: None,
         audio_codecs: vec![],
+        audio_layout: None,
         subtitle_codecs: vec![],
         pix_fmt: Some(format!("{ct:?}")),
         bit_depth: bits,

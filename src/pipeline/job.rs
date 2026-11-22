@@ -37,6 +37,8 @@ pub struct JobSpec {
     pub info: MediaInfo,
     pub settings: JobSettings,
     pub output: PathBuf,
+    /// Editor job (trim / crop / join / image edit) instead of enhancement.
+    pub edit: Option<std::sync::Arc<crate::editor::EditJob>>,
 }
 
 #[derive(Clone, Debug, PartialEq)]

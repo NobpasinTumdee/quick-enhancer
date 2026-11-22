@@ -225,6 +225,7 @@ pub struct App {
     pub preflight: Option<crate::ui::perf::Preflight>,
     sys_info: crate::resources::SystemInfo,
     sys_at: Instant,
+    pub editor: crate::ui::editor::EditorState,
 }
 
 /// Noto Sans Thai (SIL OFL 1.1, see licenses/NotoSansThai-OFL.txt): egui's bundled fonts
@@ -387,6 +388,7 @@ impl App {
             preflight: None,
             sys_info: Default::default(),
             sys_at: Instant::now(),
+            editor: Default::default(),
         };
         app.refresh_sys();
         crate::ui::profiles::apply_defaults(&mut app);
@@ -518,8 +520,7 @@ impl App {
                 );
                 continue;
             }
-            let id = self.next_id;
-            self.next_id += 1;
+            let id = self.alloc_id();
             self.ws.items.push(QueueItem {
                 id,
                 path: f.clone(),
@@ -603,6 +604,48 @@ impl App {
             MediaKind::Video => s.container.ext(),
         };
         Some(dir.join(format!("{stem}{}.{ext}", s.safe_suffix())))
+    }
+
+    /// New job id (shared by queue items and editor jobs).
+    pub fn alloc_id(&mut self) -> u64 {
+        let id = self.next_id;
+        self.next_id += 1;
+        id
+    }
+
+    /// History entry for an Editor export (shown as "Edited" on the Outputs page).
+    pub fn record_edit_history(&mut self, output: &Path, kind: MediaKind, note: &str) {
+        let ffprobe = self.env.tools.ffprobe.clone();
+        let file = self.paths.history_file.clone();
+        let output = output.to_path_buf();
+        let tx = self.history_tx.clone();
+        let note = note.to_string();
+        let _ = std::thread::Builder::new().name("history".into()).spawn(move || {
+            let info = probe::probe(ffprobe.as_deref(), &output).ok();
+            let entry = crate::history::HistoryEntry {
+                output: output.clone(),
+                source: None,
+                kind: match kind {
+                    MediaKind::Video => crate::history::EntryKind::Video,
+                    MediaKind::Image => crate::history::EntryKind::Image,
+                },
+                created: crate::history::now_unix(),
+                profile: note,
+                scale: "1x".into(),
+                fps: info.as_ref().and_then(|i| i.fps).map(|f| format!("{f} fps")),
+                encoder: None,
+                width: info.as_ref().map(|i| i.width).unwrap_or(0),
+                height: info.as_ref().map(|i| i.height).unwrap_or(0),
+                duration_secs: info.as_ref().and_then(|i| i.duration),
+                size_bytes: std::fs::metadata(&output).map(|m| m.len()).unwrap_or(0),
+                processing_secs: 0.0,
+                edited: true,
+            };
+            if let Err(e) = crate::history::History::append_to_file(&file, entry) {
+                tracing::warn!("writing history failed: {e}");
+            }
+            let _ = tx.send(());
+        });
     }
 
     /// Cached system info for estimates (refreshed every few seconds in `pump`).
@@ -812,6 +855,7 @@ impl App {
                     info,
                     settings: config.job(item.settings.as_ref().unwrap_or(&current)),
                     output: out,
+                    edit: None,
                 });
             }
         }
@@ -943,6 +987,9 @@ impl App {
                 RunnerEvent::Started(id) => {
                     self.job_started.insert(id, Instant::now());
                     self.set_status(id, ItemStatus::Running, t!("status.running"))
+                }
+                RunnerEvent::Finished(id, outcome) if self.editor.owns(id) => {
+                    crate::ui::editor::on_finished(self, id, outcome);
                 }
                 RunnerEvent::Finished(id, outcome) => {
                     self.queue_done += 1;
@@ -1356,6 +1403,7 @@ impl eframe::App for App {
             match self.page {
 
                 Page::Queue | Page::Video | Page::Image => self.add_paths(dropped),
+                Page::Editor => crate::ui::editor::add_paths(self, dropped),
                 // Other pages: add to the page matching the first file.
                 _ => {
                     let to = match dropped.iter().find_map(|p| detect_kind(p)) {
@@ -1397,7 +1445,7 @@ impl eframe::App for App {
                 crate::ui::studio::image_panel(self, ui);
                 crate::ui::preview_panel(self, ui);
             }
-            Page::Editor => {}
+            Page::Editor => crate::ui::editor::editor_page(self, ui),
             Page::Outputs => crate::ui::outputs::outputs_page(self, ui),
             Page::Settings => crate::ui::settings_page::settings_page(self, ui),
         }

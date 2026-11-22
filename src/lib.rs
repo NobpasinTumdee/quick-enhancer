@@ -10,6 +10,7 @@ pub mod i18n;
 pub mod net;
 pub mod outputs;
 pub mod config;
+pub mod editor;
 pub mod devices;
 pub mod engines;
 pub mod logging;

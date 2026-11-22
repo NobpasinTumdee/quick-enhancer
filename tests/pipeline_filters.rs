@@ -114,6 +114,7 @@ fn video_filters_only_end_to_end() {
         info,
         settings: s,
         output: out.clone(),
+        edit: None,
     };
     let progress = ProgressHandle::default();
     let r = run_video(
@@ -171,6 +172,7 @@ fn video_cancel_cleans_up() {
         info,
         settings: s,
         output: out.clone(),
+        edit: None,
     };
     let cancel = CancelToken::new();
     let c2 = cancel.clone();
@@ -224,6 +226,7 @@ fn image_with_alpha_no_ai() {
         info,
         settings: s,
         output: out.clone(),
+        edit: None,
     };
     let r = run_image(&env, &spec, &ProgressHandle::default(), &CancelToken::new()).unwrap();
     assert!(matches!(r, JobOutcome::Done { .. }));
@@ -290,6 +293,7 @@ fn video_ai_upscale_and_framegen_with_scene_cut() {
         info,
         settings: s,
         output: out.clone(),
+        edit: None,
     };
     let r = run_video(
         &env,
@@ -353,6 +357,7 @@ fn framegen_single_frame_tail_chunk() {
         info,
         settings: s,
         output: out,
+        edit: None,
     };
     let r = run_video(
         &env,

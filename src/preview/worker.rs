@@ -250,6 +250,7 @@ fn render(
                 info: info.clone(),
                 settings: req.settings.clone(),
                 output: work.path().join(format!("sample.{ext}")),
+                edit: None,
             };
             let dur = dur.min(info.duration.map_or(*dur, |d| (d - start).max(0.1)));
             progress.start(0, "sample".into(), 0);

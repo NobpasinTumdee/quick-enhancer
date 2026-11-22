@@ -3,6 +3,7 @@
 
 pub mod fonttest;
 pub mod outputs;
+pub mod editor;
 pub mod perf;
 pub mod profiles;
 pub mod queue;
@@ -36,6 +37,7 @@ pub fn top_bar(app: &mut App, ui: &mut egui::Ui) {
                 }
             }
             for (p, label) in [
+                (Page::Editor, t!("tabs.editor")),
                 (Page::Outputs, t!("tabs.outputs")),
                 (Page::Settings, t!("tabs.settings")),
             ] {

@@ -98,6 +98,8 @@ pub struct SamplePlayer {
     paused_at: Option<f64>,
     pub note: String,
     pub slow: bool,
+    /// Show only the "enhanced" side, full size, without labels (Editor playback).
+    pub single: bool,
     refresh_hz: Option<u32>,
 }
 
@@ -137,6 +139,7 @@ impl SamplePlayer {
             paused_at: None,
             note,
             slow: false,
+            single: false,
             refresh_hz: refresh_rate_hz(),
         }
     }
@@ -274,6 +277,24 @@ impl SamplePlayer {
         painter.rect_filled(rect, 0.0, Color32::from_gray(18));
         let half = Vec2::new(rect.width() / 2.0 - 2.0, rect.height());
         let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
+        if self.single {
+            if let Some((h, _)) = &self.enh.tex {
+                let s = h.size_vec2();
+                let scale = (rect.width() / s.x).min(rect.height() / s.y);
+                painter.image(h.id(), Rect::from_center_size(rect.center(), s * scale), uv, Color32::WHITE);
+            }
+            painter.text(
+                rect.center_bottom() + Vec2::new(0.0, -8.0),
+                Align2::CENTER_BOTTOM,
+                format!("{clock:.2}s / {:.2}s", self.duration()),
+                FontId::monospace(12.0),
+                Color32::LIGHT_GRAY,
+            );
+            if self.playing() {
+                ui.ctx().request_repaint();
+            }
+            return;
+        }
         let sides = [
             (&self.orig, t!("preview.original")),
             (&self.enh, t!("preview.enhanced")),
