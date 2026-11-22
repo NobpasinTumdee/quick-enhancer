@@ -1,0 +1,3 @@
+This file makes Quick Enhancer run in portable mode: settings, history, tools and
+models are kept next to QuickEnhancer.exe instead of %APPDATA% / %LOCALAPPDATA%.
+Delete it to use the installed layout.

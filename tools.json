@@ -1,0 +1,65 @@
+{
+  "schema": 1,
+  "components": [
+    {
+      "id": "ffmpeg",
+      "name": "FFmpeg + FFprobe",
+      "version": "9.1-essentials",
+      "required": true,
+      "platform": "windows-x64",
+      "url": "https://github.com/GyanD/codexffmpeg/releases/download/9.1/ffmpeg-9.1-essentials_build.zip",
+      "sha256": "b9bbbb3acece000cbeec994f856649354e52c773807841e78908374b24d658fd",
+      "size": 119467219,
+      "archive": "zip",
+      "license": "GPL-3.0 (this build includes GPL components such as libx264/libx265)",
+      "homepage": "https://ffmpeg.org — Windows build by gyan.dev (https://www.gyan.dev/ffmpeg/builds/)",
+      "files": [
+        { "from": "*/bin/ffmpeg.exe", "to": "bin/ffmpeg.exe" },
+        { "from": "*/bin/ffprobe.exe", "to": "bin/ffprobe.exe" },
+        { "from": "*/LICENSE", "to": "licenses/ffmpeg/LICENSE.txt" },
+        { "from": "*/README.txt", "to": "licenses/ffmpeg/README.txt" }
+      ]
+    },
+    {
+      "id": "realesrgan",
+      "name": "Real-ESRGAN ncnn-vulkan + models",
+      "version": "0.2.5.0 (20220424)",
+      "required": false,
+      "platform": "windows-x64",
+      "url": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesrgan-ncnn-vulkan-20220424-windows.zip",
+      "sha256": "abc02804e17982a3be33675e4d471e91ea374e65b70167abc09e31acb412802d",
+      "size": 45474481,
+      "archive": "zip",
+      "license": "BSD-3-Clause (Real-ESRGAN, Xintao Wang); ncnn BSD-3-Clause (Tencent)",
+      "homepage": "https://github.com/xinntao/Real-ESRGAN",
+      "files": [
+        { "from": "realesrgan-ncnn-vulkan.exe", "to": "bin/realesrgan-ncnn-vulkan.exe" },
+        { "from": "vcomp140.dll", "to": "bin/vcomp140.dll" },
+        { "from": "vcomp140d.dll", "to": "bin/vcomp140d.dll" },
+        { "from": "models/", "to": "models/realesrgan/" },
+        { "from": "README_windows.md", "to": "licenses/realesrgan/README_windows.md" }
+      ]
+    },
+    {
+      "id": "rife",
+      "name": "RIFE ncnn-vulkan + models",
+      "version": "20221029",
+      "required": false,
+      "platform": "windows-x64",
+      "url": "https://github.com/nihui/rife-ncnn-vulkan/releases/download/20221029/rife-ncnn-vulkan-20221029-windows.zip",
+      "sha256": "d8e4d772d26cd8006ef0ad0bc82eb191b53c68677d1ae2f42506d74cbbbea606",
+      "size": 431540241,
+      "archive": "zip",
+      "license": "MIT (rife-ncnn-vulkan, nihui; RIFE models, hzwer / Megvii)",
+      "homepage": "https://github.com/nihui/rife-ncnn-vulkan",
+      "files": [
+        { "from": "*/rife-ncnn-vulkan.exe", "to": "bin/rife-ncnn-vulkan.exe" },
+        { "from": "*/rife-v4.6/", "to": "models/rife/rife-v4.6/" },
+        { "from": "*/rife-v4/", "to": "models/rife/rife-v4/" },
+        { "from": "*/rife-v2.3/", "to": "models/rife/rife-v2.3/" },
+        { "from": "*/rife-anime/", "to": "models/rife/rife-anime/" },
+        { "from": "*/LICENSE", "to": "licenses/rife/LICENSE" }
+      ]
+    }
+  ]
+}

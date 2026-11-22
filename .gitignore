@@ -1,0 +1,15 @@
+/target/
+/dist/
+/bin/
+/models/
+/licenses/ffmpeg/
+/licenses/realesrgan/
+/licenses/rife/
+/logs/
+/thumbs/
+/downloads/
+/config.toml
+/history.json
+/tools-installed.json
+/QuickEnhancer.exe
+/enhancer.exe

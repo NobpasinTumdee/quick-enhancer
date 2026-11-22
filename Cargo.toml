@@ -1,0 +1,68 @@
+[package]
+name = "quick-enhancer"
+version = "2.0.0"
+edition = "2024"
+description = "Local image & video enhancement: AI upscaling, frame interpolation, sharpen/denoise"
+license = "MIT"
+authors = ["Quick Enhancer contributors"]
+build = "build.rs"
+
+[lib]
+name = "quick_enhancer"
+path = "src/lib.rs"
+
+[[bin]]
+name = "QuickEnhancer"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0.104"
+ash = { version = "0.38.0", default-features = false, features = ["loaded", "std"] }
+chrono = { version = "0.4.45", default-features = false, features = ["clock", "std", "serde"] }
+crossbeam-channel = "0.5.17"
+dirs = "7.0.0"
+eframe = { version = "0.37.0", default-features = false, features = ["wgpu", "default_fonts", "x11", "wayland"] }
+egui = "0.37.0"
+fast_image_resize = { version = "6.2.0", features = ["rayon"] }
+image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "webp", "bmp", "tiff", "rayon"] }
+nvml-wrapper = "0.13.0"
+rayon = "1.12.0"
+rfd = "0.18.0"
+rodio = { version = "0.23.0", default-features = false, features = ["playback"] }
+semver = "1.0.28"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+sha2 = "0.11.1"
+sysinfo = { version = "0.40.4", default-features = false, features = ["system", "disk"] }
+thiserror = "2.0.21"
+toml = "1.2.2"
+tracing = "0.1.44"
+tracing-appender = "0.2.5"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter", "fmt"] }
+trash = "5.4.0"
+ureq = "3.5.2"
+zip = { version = "9.8.1", default-features = false, features = ["deflate"] }
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62.2", features = [
+    "Win32_Foundation",
+    "Win32_System_Performance",
+    "Win32_System_Threading",
+    "Win32_Globalization",
+    "Win32_Graphics_Gdi",
+] }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 4
+strip = true
+
+# Filters are hot loops; keep them reasonably fast even in debug/test builds.
+[profile.dev.package."*"]
+opt-level = 2
+[profile.test]
+opt-level = 2
+
+[build-dependencies]
+winresource = "0.1.34"
