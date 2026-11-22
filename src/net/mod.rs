@@ -6,9 +6,8 @@ pub mod http;
 pub mod tools;
 pub mod update;
 
-/// GitHub repository that publishes releases. **Placeholder — set before the first release**
-/// (see docs/RELEASING.md).
-pub const GITHUB_REPO: &str = "OWNER/REPO";
+/// GitHub repository that publishes releases (see docs/RELEASING.md).
+pub const GITHUB_REPO: &str = "NobpasinTumdee/quick-enhancer";
 
 /// Release manifest URL (`latest.json` attached to the newest GitHub release). The
 /// `QUICK_ENHANCER_UPDATE_URL` env var overrides it (for testing with a local server).

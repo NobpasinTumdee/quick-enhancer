@@ -10,9 +10,8 @@
 #ifndef AppVersion
   #define AppVersion GetStringFileInfo(ExePath, "ProductVersion")
 #endif
-; PLACEHOLDERS — set before publishing (see docs/RELEASING.md).
-#define AppPublisher "Quick Enhancer Publisher"
-#define AppRepoUrl "https://github.com/OWNER/REPO"
+#define AppPublisher "NobpasinTumdee"
+#define AppRepoUrl "https://github.com/NobpasinTumdee/quick-enhancer"
 
 [Setup]
 ; Never change AppId: upgrades and uninstall are keyed on it.

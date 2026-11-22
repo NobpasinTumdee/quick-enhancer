@@ -44,6 +44,13 @@ update check).
   keeping the colour profile and EXIF when possible; undo/redo (Ctrl+Z / Ctrl+Y); "Send to
   Video/Image page"; edits appear in Outputs marked "✂ Edited".
 
+### Fixed
+- The installed app had **no icon**: the exe's icon and version info were silently skipped when
+  no resource compiler (rc.exe / windres) was found. `build.rs` now writes the resource object
+  itself, so the icon is always embedded. New app icon.
+- The update check pointed at a placeholder repository; it now uses
+  `NobpasinTumdee/quick-enhancer` releases.
+
 ### Changed
 - Outputs tab: wrapping grid with fixed cards and vertical scrolling only, names elided with the
   full name on hover, paths elided in the middle in the list view; only visible rows are laid
