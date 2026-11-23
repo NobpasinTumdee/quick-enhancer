@@ -611,6 +611,12 @@ pub struct Config {
     pub update_check_asked: bool,
     /// Outputs page view options.
     pub outputs: OutputsView,
+    /// The first-run setup wizard was completed or skipped.
+    pub wizard_done: bool,
+    /// ONNX Runtime used for ONNX models (one per process; switching needs a restart).
+    pub onnx_runtime: crate::models::RuntimeKind,
+    /// Model ids whose non-commercial license the user accepted.
+    pub accepted_licenses: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, Default)]
@@ -669,6 +675,9 @@ impl Default for Config {
             auto_update_check: false,
             update_check_asked: false,
             outputs: OutputsView::default(),
+            wizard_done: false,
+            onnx_runtime: crate::models::RuntimeKind::DirectMl,
+            accepted_licenses: Vec::new(),
         }
     }
 }

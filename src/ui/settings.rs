@@ -182,6 +182,7 @@ pub fn framegen(app: &mut App, ui: &mut egui::Ui) {
     }
     let model = env.models.rife_model(&s.rife_model).cloned();
     let arbitrary = model.as_ref().is_some_and(|m| m.arbitrary_count);
+    let mut pick = crate::ui::models::ComboPick::None;
     ui.add_enabled_ui(rife_ok, |ui| {
         egui::Grid::new("fg").num_columns(2).show(ui, |ui| {
             ui.label(t!("settings.mode"));
@@ -220,18 +221,35 @@ pub fn framegen(app: &mut App, ui: &mut egui::Ui) {
                 return;
             }
             ui.label(t!("settings.rife_model"));
-            egui::ComboBox::from_id_salt("rifemodel")
-                .selected_text(model.as_ref().map(|m| m.name.clone()).unwrap_or_else(|| "—".into()))
-                .show_ui(ui, |ui| {
-                    for m in &env.models.rife {
-                        let label = if m.arbitrary_count {
-                            m.name.clone()
-                        } else {
-                            t!("settings.rife_model_2x", name = &m.name)
-                        };
-                        ui.selectable_value(&mut s.rife_model, m.name.clone(), label);
-                    }
-                });
+            // Installed RIFE folders that the catalog doesn't list (older installs).
+            let extra: Vec<(String, String)> = env
+                .models
+                .rife
+                .iter()
+                .map(|m| {
+                    let label = if m.arbitrary_count {
+                        m.name.clone()
+                    } else {
+                        t!("settings.rife_model_2x", name = &m.name)
+                    };
+                    (m.name.clone(), label)
+                })
+                .collect();
+            if let Some(m) = &model
+                && s.rife_model != m.name
+                && !env.models.rife.iter().any(|r| r.name == s.rife_model)
+            {
+                // The configured model is gone: show what will actually be used.
+                s.rife_model = m.name.clone();
+            }
+            pick = crate::ui::models::model_combo(
+                ui,
+                "rifemodel",
+                &app.models_ui,
+                crate::models::Group::Interpolate,
+                &extra,
+                &mut s.rife_model,
+            );
             ui.end_row();
             ui.label(t!("settings.scene_cuts"));
             ui.horizontal_wrapped(|ui| {
@@ -259,6 +277,7 @@ pub fn framegen(app: &mut App, ui: &mut egui::Ui) {
         hint(ui, t!("settings.videos_only"));
     }
     hint(ui, t!("settings.framegen_hint"));
+    crate::ui::models::handle_pick(app, pick);
 }
 
 pub fn filters(app: &mut App, ui: &mut egui::Ui) {

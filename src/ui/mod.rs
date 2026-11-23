@@ -2,6 +2,7 @@
 //! through `t!` (see `locales/*.toml`).
 
 pub mod fonttest;
+pub mod models;
 pub mod outputs;
 pub mod editor;
 pub mod perf;
@@ -14,6 +15,7 @@ pub mod studio;
 pub mod tools;
 pub mod update;
 pub mod widgets;
+pub mod wizard;
 
 use egui::{Color32, RichText};
 
@@ -38,6 +40,7 @@ pub fn top_bar(app: &mut App, ui: &mut egui::Ui) {
             }
             for (p, label) in [
                 (Page::Editor, t!("tabs.editor")),
+                (Page::Models, t!("tabs.models")),
                 (Page::Outputs, t!("tabs.outputs")),
                 (Page::Settings, t!("tabs.settings")),
             ] {
