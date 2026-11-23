@@ -274,20 +274,7 @@ pub fn auto_tune(app: &mut App) {
         .and_then(|i| i.info.clone())
         .filter(|i| i.kind == MediaKind::Video)
         .and_then(|info| estimate_for(app, &info).map(|x| x.0))
-        .unwrap_or(EstimateInput {
-            video: true,
-            src_w: 1920,
-            src_h: 1080,
-            frames: 1800,
-            k: 2,
-            ai: true,
-            heavy: true,
-            model_w: 7680,
-            model_h: 4320,
-            out_w: 3840,
-            out_h: 2160,
-            out_fps: 60.0,
-        });
+        .unwrap_or_default();
     let (m, changes) = resources::auto_tune(app.sys(), bench(app), &app.config.machine, &typical);
     app.config.machine = m;
     app.tune_report = Some(changes);

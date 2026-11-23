@@ -1,6 +1,6 @@
 [package]
 name = "quick-enhancer"
-version = "2.1.0"
+version = "2.2.0"
 edition = "2024"
 description = "Local image & video enhancement: AI upscaling, frame interpolation, sharpen/denoise"
 license = "MIT"
@@ -26,6 +26,10 @@ egui = "0.37.0"
 fast_image_resize = { version = "6.2.0", features = ["rayon"] }
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "webp", "bmp", "tiff", "rayon"] }
 nvml-wrapper = "0.13.0"
+# ONNX Runtime, loaded at run time from the downloaded DLL (no build-time binaries).
+ort = { version = "=2.0.0-rc.15", default-features = false, features = ["std", "ndarray", "half", "load-dynamic", "directml", "cuda", "api-24"] }
+half = "2.7"
+ndarray = "0.17"
 rayon = "1.12.0"
 rfd = "0.18.0"
 rodio = { version = "0.23.0", default-features = false, features = ["playback"] }
@@ -50,6 +54,8 @@ windows = { version = "0.62.2", features = [
     "Win32_System_Threading",
     "Win32_Globalization",
     "Win32_Graphics_Gdi",
+    "Win32_Graphics_Dxgi",
+    "Win32_System_LibraryLoader",
 ] }
 
 [profile.release]

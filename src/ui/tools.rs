@@ -381,35 +381,3 @@ pub fn tools_window(app: &mut App, ctx: &egui::Context) {
         app.tools_ui.open = false;
     }
 }
-
-/// Full-window page for `QuickEnhancer.exe --install-tools` (run by the installer).
-pub fn tools_only_page(app: &mut App, ui: &mut egui::Ui) {
-    let paths = app.paths.clone();
-    let mut toasts = Vec::new();
-    egui::CentralPanel::default().show(ui, |ui| {
-        ui.heading(t!("tools.setup_heading"));
-        ui.separator();
-        egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-            app.tools_ui.body(ui, &paths, &mut toasts);
-            ui.add_space(12.0);
-            let running = app.tools_ui.running();
-            let finished = app
-                .tools_ui
-                .installer
-                .as_ref()
-                .is_some_and(|i| i.snapshot().finished);
-            ui.horizontal(|ui| {
-                let label = if finished { t!("tools.finish") } else { t!("tools.skip_for_now") };
-                if ui.add_enabled(!running, egui::Button::new(label)).clicked() {
-                    ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
-                }
-            });
-            if !finished {
-                ui.label(RichText::new(t!("tools.later_hint")).small().weak());
-            }
-        });
-    });
-    for t in toasts {
-        app.toast(t);
-    }
-}

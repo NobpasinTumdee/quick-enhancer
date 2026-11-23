@@ -1,0 +1,1476 @@
+{
+ "schema": 1,
+ "catalog_version": "2026.11.3",
+ "update_url": "https://github.com/NobpasinTumdee/quick-enhancer/releases/download/models-2026.11/models.json",
+ "packages": [
+  {
+   "id": "vcrt-dml",
+   "name": "Microsoft Visual C++ runtime (app-local)",
+   "version": "14.52.37029",
+   "required": false,
+   "platform": "windows-x64",
+   "url": "https://github.com/NobpasinTumdee/quick-enhancer/releases/download/models-2026.11/vcruntime-14.52.37029-x64.zip",
+   "sha256": "791ff9bb5b98acc8168bcb3168ebdbc4b4eabfe3d10a79d3e5648b5f159bda79",
+   "size": 325201,
+   "archive": "zip",
+   "license": "Microsoft Visual C++ Redistributable (Distributable Code)",
+   "homepage": "https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist",
+   "files": [
+    {
+     "from": "vcruntime140.dll",
+     "to": "runtime/dml/vcruntime140.dll"
+    },
+    {
+     "from": "vcruntime140_1.dll",
+     "to": "runtime/dml/vcruntime140_1.dll"
+    },
+    {
+     "from": "msvcp140.dll",
+     "to": "runtime/dml/msvcp140.dll"
+    },
+    {
+     "from": "VCRUNTIME-NOTICE.txt",
+     "to": "licenses/vcruntime/NOTICE.txt"
+    }
+   ]
+  },
+  {
+   "id": "vcrt-cuda",
+   "name": "Microsoft Visual C++ runtime (app-local)",
+   "version": "14.52.37029",
+   "required": false,
+   "platform": "windows-x64",
+   "url": "https://github.com/NobpasinTumdee/quick-enhancer/releases/download/models-2026.11/vcruntime-14.52.37029-x64.zip",
+   "sha256": "791ff9bb5b98acc8168bcb3168ebdbc4b4eabfe3d10a79d3e5648b5f159bda79",
+   "size": 325201,
+   "archive": "zip",
+   "license": "Microsoft Visual C++ Redistributable (Distributable Code)",
+   "homepage": "https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist",
+   "files": [
+    {
+     "from": "vcruntime140.dll",
+     "to": "runtime/cuda/vcruntime140.dll"
+    },
+    {
+     "from": "vcruntime140_1.dll",
+     "to": "runtime/cuda/vcruntime140_1.dll"
+    },
+    {
+     "from": "msvcp140.dll",
+     "to": "runtime/cuda/msvcp140.dll"
+    },
+    {
+     "from": "VCRUNTIME-NOTICE.txt",
+     "to": "licenses/vcruntime/NOTICE.txt"
+    }
+   ]
+  },
+  {
+   "id": "ort-dml",
+   "name": "ONNX Runtime 1.24.4 + DirectML",
+   "version": "1.24.4",
+   "required": false,
+   "platform": "windows-x64",
+   "url": "https://files.pythonhosted.org/packages/88/ea/33814eb0ec96775eda4c1d30b0d86e91d7d2cd0d84c66d3915aef0e06fa3/onnxruntime_directml-1.24.4-cp312-cp312-win_amd64.whl",
+   "sha256": "f2ecb68b7b7b259d2ef3112ae760149f9b5a1e7c0fbb73d539da6250a648a614",
+   "size": 25111930,
+   "archive": "zip",
+   "license": "MIT (ONNX Runtime, Microsoft); DirectML: Microsoft software license",
+   "homepage": "https://onnxruntime.ai",
+   "files": [
+    {
+     "from": "onnxruntime/capi/onnxruntime.dll",
+     "to": "runtime/dml/onnxruntime.dll"
+    },
+    {
+     "from": "onnxruntime/capi/onnxruntime_providers_shared.dll",
+     "to": "runtime/dml/onnxruntime_providers_shared.dll"
+    },
+    {
+     "from": "onnxruntime/capi/DirectML.dll",
+     "to": "runtime/dml/DirectML.dll"
+    },
+    {
+     "from": "onnxruntime/LICENSE",
+     "to": "licenses/onnxruntime/LICENSE"
+    },
+    {
+     "from": "onnxruntime/ThirdPartyNotices.txt",
+     "to": "licenses/onnxruntime/ThirdPartyNotices.txt"
+    }
+   ]
+  },
+  {
+   "id": "ort-cuda",
+   "name": "ONNX Runtime 1.32.0 (CUDA)",
+   "version": "1.32.0",
+   "required": false,
+   "platform": "windows-x64",
+   "url": "https://files.pythonhosted.org/packages/ee/3b/6ce3c2548db5f8f3e639373640fa7f7fcdbcbce7b754971c0b293ab105b5/onnxruntime_gpu-1.32.0-cp312-cp312-win_amd64.whl",
+   "sha256": "d8bc5d7668872889d605c1e7253581e021db7dea41a142ad2ab78d6d96f3f289",
+   "size": 157765830,
+   "archive": "zip",
+   "license": "MIT (ONNX Runtime, Microsoft)",
+   "homepage": "https://onnxruntime.ai",
+   "files": [
+    {
+     "from": "onnxruntime/capi/onnxruntime.dll",
+     "to": "runtime/cuda/onnxruntime.dll"
+    },
+    {
+     "from": "onnxruntime/capi/onnxruntime_providers_shared.dll",
+     "to": "runtime/cuda/onnxruntime_providers_shared.dll"
+    },
+    {
+     "from": "onnxruntime/capi/onnxruntime_providers_cuda.dll",
+     "to": "runtime/cuda/onnxruntime_providers_cuda.dll"
+    },
+    {
+     "from": "onnxruntime/LICENSE",
+     "to": "licenses/onnxruntime-cuda/LICENSE"
+    },
+    {
+     "from": "onnxruntime/ThirdPartyNotices.txt",
+     "to": "licenses/onnxruntime-cuda/ThirdPartyNotices.txt"
+    }
+   ]
+  },
+  {
+   "id": "cuda-runtime",
+   "name": "NVIDIA CUDA 13 runtime",
+   "version": "13.5.37",
+   "required": false,
+   "platform": "windows-x64",
+   "url": "https://files.pythonhosted.org/packages/35/99/e07dd9565d2e0317c1a62ff39ae9fc0542c048f74bcfc777c8be97710347/nvidia_cuda_runtime-13.5.37-py3-none-win_amd64.whl",
+   "sha256": "f225d3fa5ea6bfbb58fc4979ef72375cbe661d9107f0d8a4ff22cc151525e4a9",
+   "size": 2780254,
+   "archive": "zip",
+   "license": "NVIDIA Software License Agreement (CUDA Toolkit EULA)",
+   "homepage": "https://pypi.org/project/nvidia-cuda-runtime/",
+   "files": [
+    {
+     "from": "nvidia/cu13/bin/x86_64/cudart64_13.dll",
+     "to": "runtime/cuda/cudart64_13.dll"
+    },
+    {
+     "from": "nvidia_cuda_runtime-13.5.37.dist-info/licenses/License.txt",
+     "to": "licenses/nvidia/cuda-runtime.txt"
+    }
+   ]
+  },
+  {
+   "id": "cuda-cublas",
+   "name": "NVIDIA cuBLAS 13",
+   "version": "13.10.0.20",
+   "required": false,
+   "platform": "windows-x64",
+   "url": "https://files.pythonhosted.org/packages/12/39/e1b1b4adb8b171894d9a89035df0596d448cf73dc403802d24dbe30cc0be/nvidia_cublas-13.10.0.20-py3-none-win_amd64.whl",
+   "sha256": "c310b749eea855b88fafb906de08d6819b87216c6711640771764fea5dcd8546",
+   "size": 427284863,
+   "archive": "zip",
+   "license": "NVIDIA Software License Agreement (CUDA Toolkit EULA)",
+   "homepage": "https://pypi.org/project/nvidia-cublas/",
+   "files": [
+    {
+     "from": "nvidia/cu13/bin/x86_64/cublas64_13.dll",
+     "to": "runtime/cuda/cublas64_13.dll"
+    },
+    {
+     "from": "nvidia/cu13/bin/x86_64/cublasLt64_13.dll",
+     "to": "runtime/cuda/cublasLt64_13.dll"
+    },
+    {
+     "from": "nvidia_cublas-13.10.0.20.dist-info/licenses/License.txt",
+     "to": "licenses/nvidia/cublas.txt"
+    }
+   ]
+  },
+  {
+   "id": "cuda-nvrtc",
+   "name": "NVIDIA NVRTC 13",
+   "version": "13.5.37",
+   "required": false,
+   "platform": "windows-x64",
+   "url": "https://files.pythonhosted.org/packages/9f/6c/241c5155199a6de55bad8862213ed64b487dc9526aae817e4af31afea1a4/nvidia_cuda_nvrtc-13.5.37-py3-none-win_amd64.whl",
+   "sha256": "e8e6c10b251385707ae3abd7b4ee118de6736fd7678d0f0f4eab4d759f679c21",
+   "size": 49248991,
+   "archive": "zip",
+   "license": "NVIDIA Software License Agreement (CUDA Toolkit EULA)",
+   "homepage": "https://pypi.org/project/nvidia-cuda-nvrtc/",
+   "files": [
+    {
+     "from": "nvidia/cu13/bin/x86_64/nvrtc64_130_0.dll",
+     "to": "runtime/cuda/nvrtc64_130_0.dll"
+    },
+    {
+     "from": "nvidia/cu13/bin/x86_64/nvrtc-builtins64_135.dll",
+     "to": "runtime/cuda/nvrtc-builtins64_135.dll"
+    },
+    {
+     "from": "nvidia_cuda_nvrtc-13.5.37.dist-info/licenses/License.txt",
+     "to": "licenses/nvidia/nvrtc.txt"
+    }
+   ]
+  },
+  {
+   "id": "cuda-cudnn",
+   "name": "NVIDIA cuDNN 9",
+   "version": "9.28.1.4",
+   "required": false,
+   "platform": "windows-x64",
+   "url": "https://files.pythonhosted.org/packages/48/9c/26e6bdd31c97c389aa565b49c916be0dec17dd61dad6cd33fee286d1b946/nvidia_cudnn_cu13-9.28.1.4-py3-none-win_amd64.whl",
+   "sha256": "73d874c6bd8a1c75ca040228f77c4e163efe9bab3b65bd85914e2b7334ac68ee",
+   "size": 407065099,
+   "archive": "zip",
+   "license": "NVIDIA cuDNN Software License Agreement",
+   "homepage": "https://pypi.org/project/nvidia-cudnn-cu13/",
+   "files": [
+    {
+     "from": "nvidia/cudnn/bin/",
+     "to": "runtime/cuda/"
+    },
+    {
+     "from": "nvidia_cudnn_cu13-9.28.1.4.dist-info/licenses/LICENSE",
+     "to": "licenses/nvidia/cudnn.txt"
+    }
+   ]
+  },
+  {
+   "id": "realcugan",
+   "name": "Real-CUGAN ncnn-vulkan + models",
+   "version": "20220728",
+   "required": false,
+   "platform": "windows-x64",
+   "url": "https://github.com/nihui/realcugan-ncnn-vulkan/releases/download/20220728/realcugan-ncnn-vulkan-20220728-windows.zip",
+   "sha256": "c6e08d46c11704b1e3a1ada9ddd591cb5005f52f132136c8633ba25def400e01",
+   "size": 45977449,
+   "archive": "zip",
+   "license": "MIT (realcugan-ncnn-vulkan, nihui; Real-CUGAN models, bilibili)",
+   "homepage": "https://github.com/nihui/realcugan-ncnn-vulkan",
+   "files": [
+    {
+     "from": "*/realcugan-ncnn-vulkan.exe",
+     "to": "bin/realcugan-ncnn-vulkan.exe"
+    },
+    {
+     "from": "*/vcomp140.dll",
+     "to": "bin/vcomp140.dll"
+    },
+    {
+     "from": "*/models-se/",
+     "to": "models/realcugan/models-se/"
+    },
+    {
+     "from": "*/models-pro/",
+     "to": "models/realcugan/models-pro/"
+    },
+    {
+     "from": "*/LICENSE",
+     "to": "licenses/realcugan/LICENSE"
+    }
+   ]
+  },
+  {
+   "id": "esrgan-nomos2-ncnn",
+   "name": "4xNomos2 ESRGAN (ncnn)",
+   "version": "2026.11",
+   "required": false,
+   "platform": "any",
+   "url": "https://github.com/NobpasinTumdee/quick-enhancer/releases/download/models-2026.11/esrgan-nomos2-4x-ncnn.zip",
+   "sha256": "b8605a80f074b54c7d69768f90d82fcf1a5cef93d8497fdbb4a5601d9dd482a1",
+   "size": 30965044,
+   "archive": "zip",
+   "license": "CC-BY-4.0 (Phhofm)",
+   "homepage": "https://github.com/Phhofm/models",
+   "files": [
+    {
+     "from": "4xNomos2_otf_esrgan.param",
+     "to": "models/realesrgan/4xNomos2_otf_esrgan.param"
+    },
+    {
+     "from": "4xNomos2_otf_esrgan.bin",
+     "to": "models/realesrgan/4xNomos2_otf_esrgan.bin"
+    },
+    {
+     "from": "LICENSE.txt",
+     "to": "licenses/models/4xNomos2_otf_esrgan.txt"
+    }
+   ]
+  },
+  {
+   "id": "onnx-realplksr-nomos2",
+   "name": "4xNomos2 RealPLKSR (ONNX)",
+   "version": "2026.11",
+   "required": false,
+   "platform": "any",
+   "url": "https://github.com/NobpasinTumdee/quick-enhancer/releases/download/models-2026.11/realplksr-nomos2-4x-s256.onnx",
+   "sha256": "6a59797a52a7057cb6c1db762cf96862bb5a9c71e3105990ea7ba9c4b2609cde",
+   "size": 29914682,
+   "archive": "file",
+   "license": "CC-BY-4.0 (Phhofm)",
+   "homepage": "https://github.com/Phhofm/models",
+   "files": [
+    {
+     "from": "realplksr-nomos2-4x-s256.onnx",
+     "to": "models/onnx/realplksr-nomos2-4x-s256.onnx"
+    }
+   ]
+  },
+  {
+   "id": "onnx-span-nomosuni",
+   "name": "2xNomosUni SPAN (ONNX)",
+   "version": "2026.11",
+   "required": false,
+   "platform": "any",
+   "url": "https://github.com/NobpasinTumdee/quick-enhancer/releases/download/models-2026.11/span-nomosuni-2x.onnx",
+   "sha256": "ba2405245d0d5f7e9a2e81dc37270271b175841b8ae41321cc1e78e9a217c1fb",
+   "size": 1656556,
+   "archive": "file",
+   "license": "CC-BY-4.0 (Phhofm)",
+   "homepage": "https://github.com/Phhofm/models",
+   "files": [
+    {
+     "from": "span-nomosuni-2x.onnx",
+     "to": "models/onnx/span-nomosuni-2x.onnx"
+    }
+   ]
+  },
+  {
+   "id": "onnx-dat2-nomos2",
+   "name": "4xNomos2 DAT2 (ONNX fp16)",
+   "version": "2026.11",
+   "required": false,
+   "platform": "any",
+   "url": "https://github.com/NobpasinTumdee/quick-enhancer/releases/download/models-2026.11/dat2-nomos2-4x-s256-fp16.onnx",
+   "sha256": "8bda37463f7d03a9e472a0bc60ad6f0dcade643197a35036696e41258fc326ff",
+   "size": 42233621,
+   "archive": "file",
+   "license": "CC-BY-4.0 (Phhofm)",
+   "homepage": "https://github.com/Phhofm/models",
+   "files": [
+    {
+     "from": "dat2-nomos2-4x-s256-fp16.onnx",
+     "to": "models/onnx/dat2-nomos2-4x-s256-fp16.onnx"
+    }
+   ]
+  },
+  {
+   "id": "onnx-hatl-bhi",
+   "name": "4xBHI small HAT-L (ONNX)",
+   "version": "2026.11",
+   "required": false,
+   "platform": "any",
+   "url": "https://github.com/NobpasinTumdee/quick-enhancer/releases/download/models-2026.11/hatl-bhi-small-4x-s128.onnx",
+   "sha256": "70c3ba2dbdf1a024e2e78600219622dd12d65dc764faca4ae906ef39291043d0",
+   "size": 319120436,
+   "archive": "file",
+   "license": "CC-BY-4.0 (Phhofm)",
+   "homepage": "https://github.com/Phhofm/models",
+   "files": [
+    {
+     "from": "hatl-bhi-small-4x-s128.onnx",
+     "to": "models/onnx/hatl-bhi-small-4x-s128.onnx"
+    }
+   ]
+  },
+  {
+   "id": "onnx-dejpg",
+   "name": "1xDeJPG RealPLKSR (ONNX fp16)",
+   "version": "2026.11",
+   "required": false,
+   "platform": "any",
+   "url": "https://github.com/NobpasinTumdee/quick-enhancer/releases/download/models-2026.11/dejpg-realplksr-1x-fp16.onnx",
+   "sha256": "18ad3f60181bc8dc2d4af775fa9a37fe78c2ea413dde2ef22b9ec4f1c1002126",
+   "size": 15070822,
+   "archive": "file",
+   "license": "CC-BY-4.0 (Phhofm)",
+   "homepage": "https://github.com/Phhofm/models",
+   "files": [
+    {
+     "from": "dejpg-realplksr-1x-fp16.onnx",
+     "to": "models/onnx/dejpg-realplksr-1x-fp16.onnx"
+    }
+   ]
+  },
+  {
+   "id": "onnx-denoise",
+   "name": "1xDeNoise RealPLKSR (ONNX fp16)",
+   "version": "2026.11",
+   "required": false,
+   "platform": "any",
+   "url": "https://github.com/NobpasinTumdee/quick-enhancer/releases/download/models-2026.11/denoise-realplksr-1x-fp16.onnx",
+   "sha256": "2dfd6c31e39a735239cd5285902f568c0ec89557cc01327305ab5086cc6e797c",
+   "size": 15070822,
+   "archive": "file",
+   "license": "CC-BY-4.0 (Phhofm)",
+   "homepage": "https://github.com/Phhofm/models",
+   "files": [
+    {
+     "from": "denoise-realplksr-1x-fp16.onnx",
+     "to": "models/onnx/denoise-realplksr-1x-fp16.onnx"
+    }
+   ]
+  },
+  {
+   "id": "onnx-scunet",
+   "name": "SCUNet real PSNR (ONNX fp16)",
+   "version": "2026.11",
+   "required": false,
+   "platform": "any",
+   "url": "https://github.com/NobpasinTumdee/quick-enhancer/releases/download/models-2026.11/scunet-real-psnr-s256-fp16.onnx",
+   "sha256": "6f8cf9abdf770fcf470e1607fc0750cec516d42c41f8945016932e6a6c25e473",
+   "size": 59506978,
+   "archive": "file",
+   "license": "Apache-2.0 (Kai Zhang, KAIR)",
+   "homepage": "https://github.com/cszn/SCUNet",
+   "files": [
+    {
+     "from": "scunet-real-psnr-s256-fp16.onnx",
+     "to": "models/onnx/scunet-real-psnr-s256-fp16.onnx"
+    }
+   ]
+  },
+  {
+   "id": "onnx-yunet",
+   "name": "YuNet face detector (2023mar)",
+   "version": "2026.11",
+   "required": false,
+   "platform": "any",
+   "url": "https://github.com/NobpasinTumdee/quick-enhancer/releases/download/models-2026.11/yunet-2023mar.onnx",
+   "sha256": "8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4",
+   "size": 232589,
+   "archive": "file",
+   "license": "MIT (OpenCV Zoo, Shiqi Yu)",
+   "homepage": "https://github.com/opencv/opencv_zoo",
+   "files": [
+    {
+     "from": "yunet-2023mar.onnx",
+     "to": "models/onnx/yunet-2023mar.onnx"
+    }
+   ]
+  },
+  {
+   "id": "onnx-gfpgan",
+   "name": "GFPGAN 1.4 (ONNX)",
+   "version": "2026.11",
+   "required": false,
+   "platform": "any",
+   "url": "https://github.com/NobpasinTumdee/quick-enhancer/releases/download/models-2026.11/gfpgan-1.4-512.onnx",
+   "sha256": "fa44832c616278cc9daacf6433c4be0c38c0856d30254caae1bd78c38fab32ee",
+   "size": 337595396,
+   "archive": "file",
+   "license": "Apache-2.0 (TencentARC)",
+   "homepage": "https://github.com/TencentARC/GFPGAN",
+   "files": [
+    {
+     "from": "gfpgan-1.4-512.onnx",
+     "to": "models/onnx/gfpgan-1.4-512.onnx"
+    }
+   ]
+  },
+  {
+   "id": "onnx-codeformer",
+   "name": "CodeFormer 0.1.0 (ONNX)",
+   "version": "2026.11",
+   "required": false,
+   "platform": "any",
+   "url": "https://github.com/NobpasinTumdee/quick-enhancer/releases/download/models-2026.11/codeformer-0.1.0-512.onnx",
+   "sha256": "e8b5d90544cfd3a80d60570f2d6250605c51f08f366d6a243f33ecf1cf9b6410",
+   "size": 376839216,
+   "archive": "file",
+   "license": "S-Lab License 1.0 (non-commercial)",
+   "homepage": "https://github.com/sczhou/CodeFormer",
+   "files": [
+    {
+     "from": "codeformer-0.1.0-512.onnx",
+     "to": "models/onnx/codeformer-0.1.0-512.onnx"
+    }
+   ]
+  }
+ ],
+ "models": [
+  {
+   "id": "realesrgan-x4plus",
+   "group": "upscale",
+   "name": {
+    "en": "Real-ESRGAN x4plus",
+    "th": "Real-ESRGAN x4plus"
+   },
+   "desc": {
+    "en": "Classic general-purpose 4x model for photos. Fast and safe.",
+    "th": "โมเดล 4x ทั่วไปสำหรับรูปถ่าย เร็วและเสถียร"
+   },
+   "backend": "ncnn_realesrgan",
+   "ncnn_name": "realesrgan-x4plus",
+   "scales": [
+    4
+   ],
+   "speed": 3,
+   "quality": 3,
+   "vram_min_mb": 600,
+   "vram_rec_mb": 1500,
+   "cost": {
+    "s_per_mp": 6.0,
+    "vram_mb": 600
+   },
+   "license": {
+    "name": "BSD-3-Clause",
+    "url": "https://github.com/xinntao/Real-ESRGAN/blob/master/LICENSE",
+    "commercial": true,
+    "redistribute": true,
+    "attribution": "Real-ESRGAN by Xintao Wang et al."
+   },
+   "source": "https://github.com/xinntao/Real-ESRGAN",
+   "packages": [
+    "realesrgan"
+   ],
+   "files": [
+    "models/realesrgan/realesrgan-x4plus.param",
+    "models/realesrgan/realesrgan-x4plus.bin"
+   ],
+   "content": [
+    "photo"
+   ]
+  },
+  {
+   "id": "realesrgan-x4plus-anime",
+   "group": "upscale",
+   "name": {
+    "en": "Real-ESRGAN x4plus anime",
+    "th": "Real-ESRGAN x4plus anime"
+   },
+   "desc": {
+    "en": "4x model for anime illustrations and still images.",
+    "th": "โมเดล 4x สำหรับภาพวาดอนิเมะและภาพนิ่ง"
+   },
+   "backend": "ncnn_realesrgan",
+   "ncnn_name": "realesrgan-x4plus-anime",
+   "scales": [
+    4
+   ],
+   "speed": 3,
+   "quality": 3,
+   "vram_min_mb": 500,
+   "vram_rec_mb": 1200,
+   "cost": {
+    "s_per_mp": 4.0,
+    "vram_mb": 500
+   },
+   "license": {
+    "name": "BSD-3-Clause",
+    "url": "https://github.com/xinntao/Real-ESRGAN/blob/master/LICENSE",
+    "commercial": true,
+    "redistribute": true,
+    "attribution": "Real-ESRGAN by Xintao Wang et al."
+   },
+   "source": "https://github.com/xinntao/Real-ESRGAN",
+   "packages": [
+    "realesrgan"
+   ],
+   "files": [
+    "models/realesrgan/realesrgan-x4plus-anime.param",
+    "models/realesrgan/realesrgan-x4plus-anime.bin"
+   ],
+   "content": [
+    "anime"
+   ]
+  },
+  {
+   "id": "realesr-animevideov3",
+   "group": "upscale",
+   "name": {
+    "en": "Real-ESRGAN animevideo v3",
+    "th": "Real-ESRGAN animevideo v3"
+   },
+   "desc": {
+    "en": "Small, fast 2x/3x/4x model for anime video.",
+    "th": "โมเดลเล็กและเร็ว 2x/3x/4x สำหรับวิดีโออนิเมะ"
+   },
+   "backend": "ncnn_realesrgan",
+   "ncnn_name": "realesr-animevideov3",
+   "scales": [
+    2,
+    3,
+    4
+   ],
+   "speed": 5,
+   "quality": 3,
+   "vram_min_mb": 300,
+   "vram_rec_mb": 800,
+   "cost": {
+    "s_per_mp": 0.8,
+    "vram_mb": 300
+   },
+   "license": {
+    "name": "BSD-3-Clause",
+    "url": "https://github.com/xinntao/Real-ESRGAN/blob/master/LICENSE",
+    "commercial": true,
+    "redistribute": true,
+    "attribution": "Real-ESRGAN by Xintao Wang et al."
+   },
+   "source": "https://github.com/xinntao/Real-ESRGAN",
+   "packages": [
+    "realesrgan"
+   ],
+   "files": [
+    "models/realesrgan/realesr-animevideov3-x2.param",
+    "models/realesrgan/realesr-animevideov3-x2.bin"
+   ],
+   "content": [
+    "anime",
+    "video"
+   ]
+  },
+  {
+   "id": "esrgan-nomos2-4x",
+   "group": "upscale",
+   "name": {
+    "en": "Nomos2 ESRGAN 4x",
+    "th": "Nomos2 ESRGAN 4x"
+   },
+   "desc": {
+    "en": "Community ESRGAN trained on real-world damage: natural textures for photos.",
+    "th": "ESRGAN จากชุมชน ฝึกกับความเสียหายของภาพจริง ได้พื้นผิวที่เป็นธรรมชาติสำหรับรูปถ่าย"
+   },
+   "backend": "ncnn_realesrgan",
+   "ncnn_name": "4xNomos2_otf_esrgan",
+   "scales": [
+    4
+   ],
+   "speed": 2,
+   "quality": 4,
+   "vram_min_mb": 600,
+   "vram_rec_mb": 1500,
+   "cost": {
+    "s_per_mp": 12.0,
+    "vram_mb": 600
+   },
+   "license": {
+    "name": "CC-BY-4.0",
+    "url": "https://creativecommons.org/licenses/by/4.0/",
+    "commercial": true,
+    "redistribute": true,
+    "attribution": "4xNomos2_otf_esrgan by Philip Hofmann (Phhofm), https://github.com/Phhofm/models/releases/tag/4xNomos2_otf_esrgan"
+   },
+   "source": "https://github.com/Phhofm/models",
+   "packages": [
+    "realesrgan",
+    "esrgan-nomos2-ncnn"
+   ],
+   "files": [
+    "models/realesrgan/4xNomos2_otf_esrgan.param",
+    "models/realesrgan/4xNomos2_otf_esrgan.bin"
+   ],
+   "content": [
+    "photo"
+   ]
+  },
+  {
+   "id": "realcugan-se",
+   "group": "upscale",
+   "name": {
+    "en": "Real-CUGAN",
+    "th": "Real-CUGAN"
+   },
+   "desc": {
+    "en": "Anime / line-art model with crisp lines, 2x/3x/4x with denoise levels.",
+    "th": "โมเดลอนิเมะ/ลายเส้น เส้นคม 2x/3x/4x พร้อมระดับลด noise"
+   },
+   "backend": "ncnn_realcugan",
+   "ncnn_name": "models-se",
+   "scales": [
+    2,
+    3,
+    4
+   ],
+   "speed": 3,
+   "quality": 4,
+   "vram_min_mb": 1100,
+   "vram_rec_mb": 2100,
+   "cost": {
+    "s_per_mp": 1.5,
+    "vram_mb": 1100
+   },
+   "license": {
+    "name": "MIT",
+    "url": "https://github.com/bilibili/ailab/blob/main/LICENSE",
+    "commercial": true,
+    "redistribute": true,
+    "attribution": "Real-CUGAN by bilibili AI Lab; ncnn port by nihui"
+   },
+   "source": "https://github.com/bilibili/ailab/tree/main/Real-CUGAN",
+   "packages": [
+    "realcugan"
+   ],
+   "files": [
+    "bin/realcugan-ncnn-vulkan.exe",
+    "models/realcugan/models-se/up2x-conservative.param"
+   ],
+   "content": [
+    "anime",
+    "video"
+   ]
+  },
+  {
+   "id": "realcugan-pro",
+   "group": "upscale",
+   "name": {
+    "en": "Real-CUGAN Pro",
+    "th": "Real-CUGAN Pro"
+   },
+   "desc": {
+    "en": "Stronger Real-CUGAN variant (2x/3x) for heavily compressed anime.",
+    "th": "Real-CUGAN รุ่นแรงขึ้น (2x/3x) สำหรับอนิเมะที่ถูกบีบอัดมาก"
+   },
+   "backend": "ncnn_realcugan",
+   "ncnn_name": "models-pro",
+   "scales": [
+    2,
+    3
+   ],
+   "speed": 3,
+   "quality": 4,
+   "vram_min_mb": 1100,
+   "vram_rec_mb": 2100,
+   "cost": {
+    "s_per_mp": 1.6,
+    "vram_mb": 1100
+   },
+   "license": {
+    "name": "MIT",
+    "url": "https://github.com/bilibili/ailab/blob/main/LICENSE",
+    "commercial": true,
+    "redistribute": true,
+    "attribution": "Real-CUGAN by bilibili AI Lab; ncnn port by nihui"
+   },
+   "source": "https://github.com/bilibili/ailab/tree/main/Real-CUGAN",
+   "packages": [
+    "realcugan"
+   ],
+   "files": [
+    "bin/realcugan-ncnn-vulkan.exe",
+    "models/realcugan/models-pro/up2x-conservative.param"
+   ],
+   "content": [
+    "anime"
+   ]
+  },
+  {
+   "id": "realplksr-nomos2-4x",
+   "group": "upscale",
+   "name": {
+    "en": "Nomos2 RealPLKSR 4x",
+    "th": "Nomos2 RealPLKSR 4x"
+   },
+   "desc": {
+    "en": "Best balance of quality and speed for photos: natural skin and texture.",
+    "th": "สมดุลคุณภาพกับความเร็วที่ดีที่สุดสำหรับรูปถ่าย ผิวและพื้นผิวดูเป็นธรรมชาติ"
+   },
+   "backend": "onnx",
+   "scales": [
+    4
+   ],
+   "onnx": {
+    "file": "models/onnx/realplksr-nomos2-4x-s256.onnx",
+    "tile": 256,
+    "static_tile": true,
+    "precision": "fp32",
+    "input": "input",
+    "output": "output",
+    "range": "01"
+   },
+   "speed": 3,
+   "quality": 4,
+   "vram_min_mb": 700,
+   "vram_rec_mb": 1500,
+   "cost": {
+    "s_per_mp": 4.0,
+    "vram_mb": 700
+   },
+   "license": {
+    "name": "CC-BY-4.0",
+    "url": "https://creativecommons.org/licenses/by/4.0/",
+    "commercial": true,
+    "redistribute": true,
+    "attribution": "4xNomos2_realplksr_dysample by Philip Hofmann (Phhofm), https://github.com/Phhofm/models/releases/tag/4xNomos2_realplksr_dysample"
+   },
+   "source": "https://github.com/Phhofm/models",
+   "packages": [
+    "onnx-realplksr-nomos2"
+   ],
+   "files": [
+    "models/onnx/realplksr-nomos2-4x-s256.onnx"
+   ],
+   "content": [
+    "photo"
+   ],
+   "requires": [
+    "runtime:onnx"
+   ]
+  },
+  {
+   "id": "span-nomosuni-2x",
+   "group": "upscale",
+   "name": {
+    "en": "NomosUni SPAN 2x",
+    "th": "NomosUni SPAN 2x"
+   },
+   "desc": {
+    "en": "Very fast 2x model that also cleans JPEG artifacts. Good for video.",
+    "th": "โมเดล 2x ที่เร็วมาก ลบรอย JPEG ไปด้วย เหมาะกับวิดีโอ"
+   },
+   "backend": "onnx",
+   "scales": [
+    2
+   ],
+   "onnx": {
+    "file": "models/onnx/span-nomosuni-2x.onnx",
+    "tile": 512,
+    "static_tile": false,
+    "precision": "fp32",
+    "input": "input",
+    "output": "output",
+    "range": "01"
+   },
+   "speed": 5,
+   "quality": 3,
+   "vram_min_mb": 250,
+   "vram_rec_mb": 600,
+   "cost": {
+    "s_per_mp": 0.35,
+    "vram_mb": 250
+   },
+   "license": {
+    "name": "CC-BY-4.0",
+    "url": "https://creativecommons.org/licenses/by/4.0/",
+    "commercial": true,
+    "redistribute": true,
+    "attribution": "2xNomosUni_span_multijpg_ldl by Philip Hofmann (Phhofm), https://github.com/Phhofm/models/releases/tag/2xNomosUni_span_multijpg_ldl"
+   },
+   "source": "https://github.com/Phhofm/models",
+   "packages": [
+    "onnx-span-nomosuni"
+   ],
+   "files": [
+    "models/onnx/span-nomosuni-2x.onnx"
+   ],
+   "content": [
+    "photo",
+    "video"
+   ],
+   "requires": [
+    "runtime:onnx"
+   ]
+  },
+  {
+   "id": "dat2-nomos2-4x",
+   "group": "upscale",
+   "name": {
+    "en": "Nomos2 DAT2 4x (slow, best)",
+    "th": "Nomos2 DAT2 4x (ช้า คุณภาพสูงสุด)"
+   },
+   "desc": {
+    "en": "Transformer model with the most detail. Slow: meant for still images.",
+    "th": "โมเดล Transformer ให้รายละเอียดมากที่สุด ช้า เหมาะกับภาพนิ่ง"
+   },
+   "backend": "onnx",
+   "scales": [
+    4
+   ],
+   "onnx": {
+    "file": "models/onnx/dat2-nomos2-4x-s256-fp16.onnx",
+    "tile": 256,
+    "static_tile": true,
+    "precision": "fp16",
+    "input": "input",
+    "output": "output",
+    "range": "01"
+   },
+   "speed": 1,
+   "quality": 5,
+   "vram_min_mb": 2300,
+   "vram_rec_mb": 3000,
+   "cost": {
+    "s_per_mp": 20.0,
+    "vram_mb": 2300
+   },
+   "license": {
+    "name": "CC-BY-4.0",
+    "url": "https://creativecommons.org/licenses/by/4.0/",
+    "commercial": true,
+    "redistribute": true,
+    "attribution": "4xNomos2_hq_dat2 by Philip Hofmann (Phhofm), https://github.com/Phhofm/models/releases/tag/4xNomos2_hq_dat2"
+   },
+   "source": "https://github.com/Phhofm/models",
+   "packages": [
+    "onnx-dat2-nomos2"
+   ],
+   "files": [
+    "models/onnx/dat2-nomos2-4x-s256-fp16.onnx"
+   ],
+   "content": [
+    "photo"
+   ],
+   "requires": [
+    "runtime:onnx"
+   ]
+  },
+  {
+   "id": "hatl-bhi-4x",
+   "group": "upscale",
+   "name": {
+    "en": "BHI HAT-L 4x (experimental)",
+    "th": "BHI HAT-L 4x (ทดลอง)"
+   },
+   "desc": {
+    "en": "Very slow transformer model (about 2 minutes per 1080p photo).",
+    "th": "โมเดล Transformer ที่ช้ามาก (ราว 2 นาทีต่อรูป 1080p)"
+   },
+   "backend": "onnx",
+   "scales": [
+    4
+   ],
+   "onnx": {
+    "file": "models/onnx/hatl-bhi-small-4x-s128.onnx",
+    "tile": 128,
+    "static_tile": true,
+    "precision": "fp32",
+    "input": "input",
+    "output": "output",
+    "range": "01"
+   },
+   "speed": 1,
+   "quality": 5,
+   "vram_min_mb": 2100,
+   "vram_rec_mb": 3000,
+   "cost": {
+    "s_per_mp": 62.0,
+    "vram_mb": 2100
+   },
+   "license": {
+    "name": "CC-BY-4.0",
+    "url": "https://creativecommons.org/licenses/by/4.0/",
+    "commercial": true,
+    "redistribute": true,
+    "attribution": "4xBHI_small_hat-l by Philip Hofmann (Phhofm), https://github.com/Phhofm/models/releases/tag/4xBHI_small_hat-l"
+   },
+   "source": "https://github.com/Phhofm/models",
+   "packages": [
+    "onnx-hatl-bhi"
+   ],
+   "files": [
+    "models/onnx/hatl-bhi-small-4x-s128.onnx"
+   ],
+   "content": [
+    "photo"
+   ],
+   "requires": [
+    "runtime:onnx"
+   ],
+   "experimental": true
+  },
+  {
+   "id": "dejpg-1x",
+   "group": "restore",
+   "name": {
+    "en": "DeJPG 1x",
+    "th": "DeJPG 1x"
+   },
+   "desc": {
+    "en": "Removes JPEG blocks and ringing at the original size.",
+    "th": "ลบรอยบล็อก JPEG และขอบเงาที่ขนาดเดิม"
+   },
+   "backend": "onnx",
+   "scales": [
+    1
+   ],
+   "onnx": {
+    "file": "models/onnx/dejpg-realplksr-1x-fp16.onnx",
+    "tile": 512,
+    "static_tile": false,
+    "precision": "fp16",
+    "input": "input",
+    "output": "output",
+    "range": "01"
+   },
+   "speed": 4,
+   "quality": 4,
+   "vram_min_mb": 250,
+   "vram_rec_mb": 600,
+   "cost": {
+    "s_per_mp": 1.4,
+    "vram_mb": 250
+   },
+   "license": {
+    "name": "CC-BY-4.0",
+    "url": "https://creativecommons.org/licenses/by/4.0/",
+    "commercial": true,
+    "redistribute": true,
+    "attribution": "1xDeJPG_realplksr_otf by Philip Hofmann (Phhofm), https://github.com/Phhofm/models/releases/tag/1xDeJPG_realplksr_otf"
+   },
+   "source": "https://github.com/Phhofm/models",
+   "packages": [
+    "onnx-dejpg"
+   ],
+   "files": [
+    "models/onnx/dejpg-realplksr-1x-fp16.onnx"
+   ],
+   "content": [
+    "photo",
+    "video"
+   ],
+   "requires": [
+    "runtime:onnx"
+   ]
+  },
+  {
+   "id": "denoise-1x",
+   "group": "restore",
+   "name": {
+    "en": "DeNoise 1x",
+    "th": "DeNoise 1x"
+   },
+   "desc": {
+    "en": "Removes sensor noise at the original size.",
+    "th": "ลด noise จากเซนเซอร์ที่ขนาดเดิม"
+   },
+   "backend": "onnx",
+   "scales": [
+    1
+   ],
+   "onnx": {
+    "file": "models/onnx/denoise-realplksr-1x-fp16.onnx",
+    "tile": 512,
+    "static_tile": false,
+    "precision": "fp16",
+    "input": "input",
+    "output": "output",
+    "range": "01"
+   },
+   "speed": 4,
+   "quality": 4,
+   "vram_min_mb": 250,
+   "vram_rec_mb": 600,
+   "cost": {
+    "s_per_mp": 1.4,
+    "vram_mb": 250
+   },
+   "license": {
+    "name": "CC-BY-4.0",
+    "url": "https://creativecommons.org/licenses/by/4.0/",
+    "commercial": true,
+    "redistribute": true,
+    "attribution": "1xDeNoise_realplksr_otf by Philip Hofmann (Phhofm), https://github.com/Phhofm/models/releases/tag/1xDeNoise_realplksr_otf"
+   },
+   "source": "https://github.com/Phhofm/models",
+   "packages": [
+    "onnx-denoise"
+   ],
+   "files": [
+    "models/onnx/denoise-realplksr-1x-fp16.onnx"
+   ],
+   "content": [
+    "photo",
+    "video"
+   ],
+   "requires": [
+    "runtime:onnx"
+   ]
+  },
+  {
+   "id": "scunet-1x",
+   "group": "restore",
+   "name": {
+    "en": "SCUNet denoise 1x",
+    "th": "SCUNet ลด noise 1x"
+   },
+   "desc": {
+    "en": "Strong denoiser for heavy noise.",
+    "th": "ลด noise ได้แรง เหมาะกับภาพที่ noise เยอะ"
+   },
+   "backend": "onnx",
+   "scales": [
+    1
+   ],
+   "onnx": {
+    "file": "models/onnx/scunet-real-psnr-s256-fp16.onnx",
+    "tile": 256,
+    "static_tile": true,
+    "precision": "fp16",
+    "input": "input",
+    "output": "output",
+    "range": "01"
+   },
+   "speed": 3,
+   "quality": 4,
+   "vram_min_mb": 1200,
+   "vram_rec_mb": 2000,
+   "cost": {
+    "s_per_mp": 2.7,
+    "vram_mb": 1200
+   },
+   "license": {
+    "name": "Apache-2.0",
+    "url": "https://github.com/cszn/SCUNet/blob/main/LICENSE",
+    "commercial": true,
+    "redistribute": true,
+    "attribution": "SCUNet by Kai Zhang et al."
+   },
+   "source": "https://github.com/cszn/SCUNet",
+   "packages": [
+    "onnx-scunet"
+   ],
+   "files": [
+    "models/onnx/scunet-real-psnr-s256-fp16.onnx"
+   ],
+   "content": [
+    "photo"
+   ],
+   "requires": [
+    "runtime:onnx"
+   ]
+  },
+  {
+   "id": "yunet",
+   "group": "helper",
+   "name": {
+    "en": "YuNet face detector",
+    "th": "ตัวตรวจจับใบหน้า YuNet"
+   },
+   "desc": {
+    "en": "Finds faces for face restoration.",
+    "th": "หาตำแหน่งใบหน้าสำหรับการฟื้นฟูใบหน้า"
+   },
+   "backend": "onnx",
+   "scales": [
+    1
+   ],
+   "onnx": {
+    "file": "models/onnx/yunet-2023mar.onnx",
+    "tile": 640,
+    "static_tile": true,
+    "precision": "fp32",
+    "input": "input",
+    "output": "output",
+    "range": "01"
+   },
+   "speed": 5,
+   "quality": 3,
+   "vram_min_mb": 50,
+   "vram_rec_mb": 100,
+   "cost": {
+    "s_per_mp": 0.0,
+    "vram_mb": 50
+   },
+   "license": {
+    "name": "MIT",
+    "url": "https://github.com/opencv/opencv_zoo/blob/main/models/face_detection_yunet/LICENSE",
+    "commercial": true,
+    "redistribute": true,
+    "attribution": "YuNet by Shiqi Yu et al. (OpenCV Zoo)"
+   },
+   "source": "https://github.com/opencv/opencv_zoo",
+   "packages": [
+    "onnx-yunet"
+   ],
+   "files": [
+    "models/onnx/yunet-2023mar.onnx"
+   ],
+   "content": [],
+   "requires": [
+    "runtime:onnx"
+   ],
+   "hidden": true
+  },
+  {
+   "id": "gfpgan-1.4",
+   "group": "face",
+   "name": {
+    "en": "GFPGAN 1.4",
+    "th": "GFPGAN 1.4"
+   },
+   "desc": {
+    "en": "Restores blurry or compressed faces with a natural look.",
+    "th": "ฟื้นฟูใบหน้าที่เบลอหรือถูกบีบอัด ให้ผลที่ดูเป็นธรรมชาติ"
+   },
+   "backend": "onnx",
+   "scales": [
+    1
+   ],
+   "onnx": {
+    "file": "models/onnx/gfpgan-1.4-512.onnx",
+    "tile": 512,
+    "static_tile": true,
+    "precision": "fp32",
+    "input": "input",
+    "output": "output",
+    "range": "01"
+   },
+   "speed": 4,
+   "quality": 4,
+   "vram_min_mb": 1500,
+   "vram_rec_mb": 2000,
+   "cost": {
+    "s_per_mp": 0.0,
+    "vram_mb": 1500
+   },
+   "license": {
+    "name": "Apache-2.0",
+    "url": "https://github.com/TencentARC/GFPGAN/blob/master/LICENSE",
+    "commercial": true,
+    "redistribute": true,
+    "attribution": "GFPGAN by Xintao Wang et al. (TencentARC)"
+   },
+   "source": "https://github.com/TencentARC/GFPGAN",
+   "packages": [
+    "onnx-gfpgan"
+   ],
+   "files": [
+    "models/onnx/gfpgan-1.4-512.onnx"
+   ],
+   "content": [
+    "photo",
+    "video"
+   ],
+   "requires": [
+    "runtime:onnx",
+    "yunet"
+   ]
+  },
+  {
+   "id": "codeformer",
+   "group": "face",
+   "name": {
+    "en": "CodeFormer (non-commercial)",
+    "th": "CodeFormer (ห้ามใช้เชิงพาณิชย์)"
+   },
+   "desc": {
+    "en": "Strong face restoration with a fidelity slider. Non-commercial use only.",
+    "th": "ฟื้นฟูใบหน้าได้แรง ปรับความใกล้เคียงต้นฉบับได้ ใช้ได้เฉพาะงานที่ไม่ใช่เชิงพาณิชย์"
+   },
+   "backend": "onnx",
+   "scales": [
+    1
+   ],
+   "onnx": {
+    "file": "models/onnx/codeformer-0.1.0-512.onnx",
+    "tile": 512,
+    "static_tile": true,
+    "precision": "fp32",
+    "input": "input",
+    "output": "output",
+    "range": "01"
+   },
+   "speed": 3,
+   "quality": 5,
+   "vram_min_mb": 1750,
+   "vram_rec_mb": 2500,
+   "cost": {
+    "s_per_mp": 0.0,
+    "vram_mb": 1750
+   },
+   "license": {
+    "name": "S-Lab License 1.0",
+    "url": "https://github.com/sczhou/CodeFormer/blob/master/LICENSE",
+    "commercial": false,
+    "redistribute": true,
+    "attribution": "CodeFormer by Shangchen Zhou et al. (S-Lab, NTU)"
+   },
+   "source": "https://github.com/sczhou/CodeFormer",
+   "packages": [
+    "onnx-codeformer"
+   ],
+   "files": [
+    "models/onnx/codeformer-0.1.0-512.onnx"
+   ],
+   "content": [
+    "photo",
+    "video"
+   ],
+   "requires": [
+    "runtime:onnx",
+    "yunet"
+   ]
+  },
+  {
+   "id": "rife-v4.26",
+   "group": "interpolate",
+   "name": {
+    "en": "RIFE v4.26",
+    "th": "RIFE v4.26"
+   },
+   "desc": {
+    "en": "Newest RIFE (default): fewer artifacts in fast motion.",
+    "th": "RIFE รุ่นใหม่ที่สุด (ค่าเริ่มต้น) ภาพแตกน้อยลงเมื่อเคลื่อนไหวเร็ว"
+   },
+   "backend": "ncnn_rife",
+   "ncnn_name": "rife-v4.26",
+   "scales": [
+    2,
+    3,
+    4
+   ],
+   "speed": 3,
+   "quality": 4,
+   "vram_min_mb": 630,
+   "vram_rec_mb": 1260,
+   "cost": {
+    "s_per_mp": 0.08,
+    "vram_mb": 630
+   },
+   "license": {
+    "name": "MIT",
+    "url": "https://github.com/hzwer/ECCV2022-RIFE/blob/main/LICENSE",
+    "commercial": true,
+    "redistribute": true,
+    "attribution": "RIFE by hzwer / Megvii; ncnn port by nihui (TNTwise fork)"
+   },
+   "source": "https://github.com/TNTwise/rife-ncnn-vulkan",
+   "packages": [
+    "rife"
+   ],
+   "files": [
+    "models/rife/rife-v4.26/flownet.param",
+    "models/rife/rife-v4.26/flownet.bin"
+   ],
+   "content": [
+    "video"
+   ]
+  },
+  {
+   "id": "rife-v4.6",
+   "group": "interpolate",
+   "name": {
+    "en": "RIFE v4.6",
+    "th": "RIFE v4.6"
+   },
+   "desc": {
+    "en": "Fast and reliable for 2x-4x frame rates.",
+    "th": "เร็วและเสถียร สำหรับเพิ่มเฟรม 2x-4x"
+   },
+   "backend": "ncnn_rife",
+   "ncnn_name": "rife-v4.6",
+   "scales": [
+    2,
+    3,
+    4
+   ],
+   "speed": 4,
+   "quality": 3,
+   "vram_min_mb": 370,
+   "vram_rec_mb": 740,
+   "cost": {
+    "s_per_mp": 0.07,
+    "vram_mb": 370
+   },
+   "license": {
+    "name": "MIT",
+    "url": "https://github.com/hzwer/ECCV2022-RIFE/blob/main/LICENSE",
+    "commercial": true,
+    "redistribute": true,
+    "attribution": "RIFE by hzwer / Megvii; ncnn port by nihui (TNTwise fork)"
+   },
+   "source": "https://github.com/TNTwise/rife-ncnn-vulkan",
+   "packages": [
+    "rife"
+   ],
+   "files": [
+    "models/rife/rife-v4.6/flownet.param",
+    "models/rife/rife-v4.6/flownet.bin"
+   ],
+   "content": [
+    "video"
+   ]
+  },
+  {
+   "id": "rife-v4.25-lite",
+   "group": "interpolate",
+   "name": {
+    "en": "RIFE v4.25-lite",
+    "th": "RIFE v4.25-lite"
+   },
+   "desc": {
+    "en": "Light RIFE 4.25 for slower GPUs.",
+    "th": "RIFE 4.25 รุ่นเบา สำหรับการ์ดจอที่ช้า"
+   },
+   "backend": "ncnn_rife",
+   "ncnn_name": "rife-v4.25-lite",
+   "scales": [
+    2,
+    3,
+    4
+   ],
+   "speed": 5,
+   "quality": 3,
+   "vram_min_mb": 300,
+   "vram_rec_mb": 600,
+   "cost": {
+    "s_per_mp": 0.05,
+    "vram_mb": 300
+   },
+   "license": {
+    "name": "MIT",
+    "url": "https://github.com/hzwer/ECCV2022-RIFE/blob/main/LICENSE",
+    "commercial": true,
+    "redistribute": true,
+    "attribution": "RIFE by hzwer / Megvii; ncnn port by nihui (TNTwise fork)"
+   },
+   "source": "https://github.com/TNTwise/rife-ncnn-vulkan",
+   "packages": [
+    "rife"
+   ],
+   "files": [
+    "models/rife/rife-v4.25-lite/flownet.param",
+    "models/rife/rife-v4.25-lite/flownet.bin"
+   ],
+   "content": [
+    "video"
+   ]
+  },
+  {
+   "id": "rife-v4",
+   "group": "interpolate",
+   "name": {
+    "en": "RIFE v4",
+    "th": "RIFE v4"
+   },
+   "desc": {
+    "en": "Older RIFE 4.0.",
+    "th": "RIFE 4.0 รุ่นเก่า"
+   },
+   "backend": "ncnn_rife",
+   "ncnn_name": "rife-v4",
+   "scales": [
+    2,
+    3,
+    4
+   ],
+   "speed": 4,
+   "quality": 2,
+   "vram_min_mb": 370,
+   "vram_rec_mb": 740,
+   "cost": {
+    "s_per_mp": 0.07,
+    "vram_mb": 370
+   },
+   "license": {
+    "name": "MIT",
+    "url": "https://github.com/hzwer/ECCV2022-RIFE/blob/main/LICENSE",
+    "commercial": true,
+    "redistribute": true,
+    "attribution": "RIFE by hzwer / Megvii; ncnn port by nihui (TNTwise fork)"
+   },
+   "source": "https://github.com/TNTwise/rife-ncnn-vulkan",
+   "packages": [
+    "rife"
+   ],
+   "files": [
+    "models/rife/rife-v4/flownet.param",
+    "models/rife/rife-v4/flownet.bin"
+   ],
+   "content": [
+    "video"
+   ]
+  }
+ ]
+}

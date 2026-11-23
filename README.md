@@ -3,8 +3,13 @@
 A lightweight native Windows app (Rust + egui/wgpu) that makes **images and videos** look better,
 entirely on your PC:
 
-* AI **upscaling** with Real-ESRGAN (Photo / Anime / Pixel art / General / No AI profiles)
-* AI **frame generation** with RIFE (2x/3x/4x or a target FPS) with scene-cut protection
+* AI **upscaling** with Real-ESRGAN, Real-CUGAN and modern community models (RealPLKSR, SPAN,
+  DAT2, HAT-L), plus your own ncnn / ONNX models
+* AI **cleanup** at the original size (JPEG artefacts, noise) and **face restoration** (GFPGAN,
+  CodeFormer)
+* AI **frame generation** with RIFE 4.26 (2x/3x/4x or a target FPS) with scene-cut protection
+* An **AI models** page: install only the models you need (sizes, speed / quality, whether they
+  fit your GPU, licence of each model), plus a first-run setup wizard
 * **Sharpen / denoise** (CAS, unsharp mask, edge-preserving bilateral denoise)
 * Before / After **preview** with a wipe slider, side-by-side and a **sample clip player with
   sound** (per-side FPS and resolution)
@@ -27,12 +32,13 @@ Windows 10/11 x64. No account, no telemetry; nothing leaves your PC.
 2. Run it. It installs for your user only (no admin prompt; "all users" is offered in the first
    dialog). Choose English or Thai, read the third-party notices, optionally tick *desktop
    shortcut*.
-3. At the end the installer opens the **tool downloader**: pick FFmpeg (required), Real-ESRGAN
-   (upscaling) and RIFE (frame generation), tick *I have read the licenses* and press **Install
-   selected**. Each archive is downloaded from its official release page and checked against a
-   pinned SHA-256 before anything is extracted. You can skip this and do it later from
-   Settings → Application → **Manage tools**, or install from archives you downloaded yourself
-   (**Install from files… / From folder…**).
+3. At the end the installer opens the **setup wizard**: FFmpeg (required) plus what you want to
+   do — upscale photos, upscale anime, clean up old photos, restore faces, smooth motion — and,
+   on NVIDIA cards, the optional CUDA runtime. The wizard shows the total download size. Each
+   file is downloaded from a pinned URL and checked against its SHA-256 before anything is
+   extracted. You can skip it and install models later on the **AI models** page (or from a
+   model's ⬇ entry in any model list), or install tools from archives you downloaded yourself
+   (Settings → Application → **Manage tools** → *Install from files… / From folder…*).
 
 > Windows SmartScreen may say "Windows protected your PC" because the installer is not
 > code-signed: choose **More info → Run anyway**.
@@ -95,12 +101,46 @@ data folder for tools (see the table above):
 |---|---|
 | `bin/ffmpeg.exe`, `bin/ffprobe.exe` | <https://www.gyan.dev/ffmpeg/builds/> (essentials) or <https://github.com/BtbN/FFmpeg-Builds/releases>. If missing, ffmpeg/ffprobe on `PATH` are used. |
 | `bin/realesrgan-ncnn-vulkan.exe` + `bin/vcomp140.dll` | `realesrgan-ncnn-vulkan-20220424-windows.zip` from <https://github.com/xinntao/Real-ESRGAN/releases> (v0.2.5.0) |
-| `bin/rife-ncnn-vulkan.exe` | `rife-ncnn-vulkan-20221029-windows.zip` from <https://github.com/nihui/rife-ncnn-vulkan/releases> |
+| `bin/rife-ncnn-vulkan.exe` | the TNTwise build `20250112` from <https://github.com/TNTwise/rife-ncnn-vulkan/releases> (needed for RIFE v4.26; nihui's `20221029` build still runs v4.6 and older) |
 | `models/realesrgan/*.param` + `*.bin` | the `models/` folder of the Real-ESRGAN zip |
-| `models/rife/<model>/` | the model folders of the RIFE zip (`rife-v4.6/` recommended) |
+| `models/rife/<model>/` | the model folders of the RIFE zip (`rife-v4.26/` recommended) |
+| everything else (runtimes, ONNX models, Real-CUGAN) | install from the **AI models** page; see `models.json` for the files and URLs |
 
 The app starts without tools and the **Setup check** window lists exactly what is missing. A
 profile whose model is missing is greyed out with a tooltip naming the file.
+
+## AI models
+
+The **AI models** page lists every model by task with its download size, speed and quality
+(1–5), whether it fits your GPU (*Good / Tight / Too big for this GPU*), its licence and its
+state (*Installed / Not installed / Update available / Incomplete*). **Install**, **Uninstall**
+and **Repair** (re-download and verify) work per model; files shared with other models are kept.
+Model lists in the settings show installed models first and the others greyed out with ⬇ and
+their size; picking one asks to install it. When the current settings need a model that isn't
+installed, the settings show **Install missing model**.
+
+| Task | Models | Backend |
+|---|---|---|
+| Upscale (photo / video) | Real-ESRGAN x4plus, RealPLKSR Nomos2 4x, SPAN NomosUni 2x (fast), DAT2 Nomos2 4x (best detail), HAT-L BHI 4x (experimental, slow), ESRGAN Nomos2 4x | ncnn / ONNX |
+| Upscale (anime) | Real-ESRGAN x4plus-anime, animevideov3, Real-CUGAN SE / Pro (2x/3x/4x, denoise levels) | ncnn |
+| AI cleanup (1x) | DeJPG, DeNoise (RealPLKSR), SCUNet | ONNX |
+| Faces | GFPGAN 1.4, CodeFormer (**non-commercial only**, accepted once before install); YuNet detector | ONNX |
+| Frame generation | RIFE v4.26 (default), v4.25-lite, v4.6, v4 | ncnn |
+
+* **ONNX runtime:** ONNX models run inside the app with ONNX Runtime — **DirectML** (any DirectX
+  12 GPU, ~25 MB download, the default) or **CUDA** (NVIDIA only, ~1 GB). One runtime is loaded
+  per run of the app; switching takes effect after a restart. If the GPU can't run a model the
+  app falls back to the CPU and says so; if video memory runs out, the tile size is halved
+  (down to 64) and, for fixed-size models, the job stops with an explanation.
+* **Custom models:** put `*.param` + `*.bin` (ESRGAN-family ncnn) or `*.onnx` (image-to-image,
+  RGB 0..1) into `models/custom/` in the tools folder; **Rescan** on the AI models page. The scale
+  comes from the file name (`4x_Name`, `Name_x2`) or, for ONNX, from a test run. 1x ONNX models
+  can also be used for AI cleanup.
+* **Licences:** every model shows its licence and credits; non-commercial models carry a badge.
+  The full list is in [licenses/THIRD_PARTY.md](licenses/THIRD_PARTY.md). The converted model
+  files are hosted on this repository's `models-YYYY.MM` release (scripts in
+  [tools/convert/](tools/convert/README.md)); the catalog (`models.json`) can be updated without
+  updating the app.
 
 ## Using it
 
@@ -165,7 +205,10 @@ what it changed.
 
 ### Upscale profiles
 
-| Profile | Engine / model |
+Each AI profile has a **Model** list: *Automatic* uses the profile's default below; any
+installed upscale model (including custom ones) can be chosen instead.
+
+| Profile | Engine / model (Automatic) |
 |---|---|
 | Realistic / Photo | Real-ESRGAN `realesrgan-x4plus` (native 4x) |
 | Anime / 2D | video: `realesr-animevideov3` x2/x3/x4 · images: `realesrgan-x4plus-anime` |
@@ -177,7 +220,8 @@ Scale: 1x (enhance only), 2x, 3x, 4x or a target resolution (720p/1080p/1440p/4K
 
 ### Frame generation
 
-Off / 2x / 3x / 4x / target FPS. Output FPS = source FPS × integer multiplier, capped by *Max FPS* (default 120); a target FPS picks the largest multiplier that fits (e.g. 24 → "60" gives 2x = 48 fps; shown before starting). 3x/4x need a RIFE v4.x model.
+Off / 2x / 3x / 4x / target FPS, with RIFE v4.26 by default (v4.25-lite for slower GPUs, v4.6 and
+v4 also included). Output FPS = source FPS × integer multiplier, capped by *Max FPS* (default 120); a target FPS picks the largest multiplier that fits (e.g. 24 → "60" gives 2x = 48 fps; shown before starting). 3x/4x need a RIFE v4.x model.
 
 * **Order:** interpolation runs at source resolution *before* upscaling — RIFE's cost scales with pixel count, so interpolating small frames and upscaling all of them is much cheaper than interpolating 4x-sized frames.
 * **Scene cuts:** each frame gets a 64×36 luma signature; mean absolute difference + histogram distance above the threshold marks a cut. Generated frames that would blend across a cut are replaced by copies of the frame before the cut (and are deleted before upscaling so no GPU time is wasted).
@@ -185,7 +229,9 @@ Off / 2x / 3x / 4x / target FPS. Output FPS = source FPS × integer multiplier, 
 
 ### Filters
 
-Order: **denoise → (interpolate) → upscale → resize → sharpen**. CAS (strength 0–1) or unsharp mask (radius / amount / threshold). Denoise is a 5×5 bilateral filter with a luma range kernel — edge preserving, single pass and fast enough for video (NL-means would be 10–50× slower). The preview runs exactly the same functions as the export.
+Order: **AI cleanup → denoise → (interpolate) → upscale → face restoration → resize → sharpen**.
+Face restoration finds faces with YuNet, aligns each to a 512×512 crop, restores it and blends it
+back with a soft mask; *Strength* blends GFPGAN or sets CodeFormer's fidelity. CAS (strength 0–1) or unsharp mask (radius / amount / threshold). Denoise is a 5×5 bilateral filter with a luma range kernel — edge preserving, single pass and fast enough for video (NL-means would be 10–50× slower). The preview runs exactly the same functions as the export.
 
 ### GPU / CPU selection, presets, tile size
 
@@ -214,7 +260,8 @@ The ncnn tools work on image files, so true streaming isn't possible with this b
 3. The processor runs RIFE and/or Real-ESRGAN on the chunk, then loads, resizes and sharpens the frames and pushes them into **one long-running ffmpeg encoder** through a raw-video pipe. The chunk's files are deleted immediately.
 4. A 2-token semaphore guarantees **at most 2 chunks on disk** (one being processed, one being prepared). The temp-space cap for the selected file is shown in the settings and free space is checked before starting.
 5. The only in-memory frame queues are bounded channels sized from the **RAM budget** setting, so memory stays flat whatever the video length.
-6. Without AI or frame generation, frames never touch the disk at all.
+6. Without ncnn AI or frame generation, frames never touch the disk at all: ONNX models
+   (upscale, cleanup, faces) run on the in-memory frames.
 
 Audio is copied when the container allows it (otherwise AAC), text subtitles are kept (MKV: all subtitles), and metadata/chapters are copied. Audio stays in sync because the duration is unchanged when the FPS is multiplied. Temp folders (`<temp>/quick-enhancer-tmp/<pid>-…`) are removed on finish, cancel and error, and stale folders from crashed runs are removed on the next start. Partial outputs are deleted on cancel/error unless *Keep partial video* is enabled.
 
@@ -234,14 +281,30 @@ profile storage (create / rename / duplicate / delete / reload, unknown and miss
 encoder preset/bitrate arguments, the local-contrast filter and the Editor's ffmpeg arguments
 (fast/accurate trim, even crop, concat compatibility and filter graph, time parse/format);
 `tests/editor_real.rs` runs trims, crops and both kinds of joins with the real ffmpeg and
-`tests/bench_real.rs` (`--ignored`) benchmarks the real GPU. v2 adds tests for i18n key parity (every key in both languages, every `t!` key used in the code exists), history merge/de-dup, version comparison, `latest.json` / `tools.json` parsing, SHA-256 verification and safe extraction, data-folder resolution (installed / portable / override / migration) and the audio-clock ↔ video-frame mapping of the sample player.
+`tests/bench_real.rs` (`--ignored`) benchmarks the real GPU. v2 adds tests for i18n key parity (every key in both languages, every `t!` key used in the code exists), history merge/de-dup, version comparison, `latest.json` / `tools.json` parsing, SHA-256 verification and safe extraction, data-folder resolution (installed / portable / override / migration) and the audio-clock ↔ video-frame mapping of the sample player. v2.2 adds tests for the model
+catalog (parsing and validation), install state and plans, single-file packages, custom model
+scanning, tiling / reflection padding / feather blending, the ONNX execution-provider fallback
+order, face alignment / detection decoding / paste-back, the catalog-based estimate and the model
+choice for profiles with missing models. `tests/models_real.rs` (`--ignored`) downloads real
+models and runs them: Real-CUGAN and ncnn custom models, ONNX models on DirectML vs the CPU,
+cleanup and transformer models, face restoration against reference images and all RIFE models.
 
 ## Known limitations
 
 * Video is processed as **8-bit SDR**; 10-bit/HDR sources are converted (a warning is shown before starting).
 * **CPU AI is very slow** (RIFE) or unavailable (Real-ESRGAN ncnn → Lanczos fallback).
 * The **Pixel Art** profile is non-AI (integer nearest-neighbour; no xBRZ yet).
-* The **ONNX Runtime (`ort`) backend** is only a stub behind the `Upscaler` trait.
+* **ONNX models on the CPU** work but are slow (a 4x RealPLKSR frame is ~10× slower than on a
+  GPU); HAT-L is slow even on a GPU and marked experimental.
+* **Face restoration** works frame by frame, so faces can flicker slightly in videos; very small
+  faces (under ~24 px) are left alone.
+* The ONNX runtime comes with its own copy of the Microsoft Visual C++ runtime (installed next to
+  `onnxruntime.dll`), so the VC++ Redistributable is not needed. If an older system copy is
+  already loaded by something else, Windows uses that one; if loading fails, the message suggests
+  **Repair** or the official VC++ Redistributable.
+* Switching between the DirectML and CUDA runtimes needs an app restart.
+* **SeedVR2** (diffusion video restoration) was evaluated for 2.2 and left out: even 17 frames at
+  512×288 needed over 10 GB of VRAM and about 3.4 s per frame.
 * Frame generation uses integer multipliers only (target FPS rounds down to one).
 * WebP output is lossless only.
 * GPU telemetry: NVML for NVIDIA, PDH counters for other vendors on Windows; on Linux non-NVIDIA GPUs show "not available".
@@ -253,5 +316,6 @@ encoder preset/bitrate arguments, the local-contrast filter and the Editor's ffm
   early (use *Accurate* for frame-exact cuts). Selection playback plays at most the first 20 s.
 * Editor exports are written next to the source (not to the page's output folder).
 * Removing a clip from the join list can't be undone.
-* Time estimates need a benchmark; the VRAM estimate is a heuristic per model and tile size.
+* Time estimates need a benchmark (scaled per model from the catalog's speed figures); the VRAM
+  estimate is a heuristic per model and tile size.
 * **Licensing:** FFmpeg "gpl" builds include x264/x265 and are GPL-licensed; Real-ESRGAN and RIFE ncnn binaries/models carry their own licenses (BSD-3 / MIT). This app runs them as separate programs and does not bundle them.

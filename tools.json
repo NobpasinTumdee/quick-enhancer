@@ -14,10 +14,22 @@
       "license": "GPL-3.0 (this build includes GPL components such as libx264/libx265)",
       "homepage": "https://ffmpeg.org — Windows build by gyan.dev (https://www.gyan.dev/ffmpeg/builds/)",
       "files": [
-        { "from": "*/bin/ffmpeg.exe", "to": "bin/ffmpeg.exe" },
-        { "from": "*/bin/ffprobe.exe", "to": "bin/ffprobe.exe" },
-        { "from": "*/LICENSE", "to": "licenses/ffmpeg/LICENSE.txt" },
-        { "from": "*/README.txt", "to": "licenses/ffmpeg/README.txt" }
+        {
+          "from": "*/bin/ffmpeg.exe",
+          "to": "bin/ffmpeg.exe"
+        },
+        {
+          "from": "*/bin/ffprobe.exe",
+          "to": "bin/ffprobe.exe"
+        },
+        {
+          "from": "*/LICENSE",
+          "to": "licenses/ffmpeg/LICENSE.txt"
+        },
+        {
+          "from": "*/README.txt",
+          "to": "licenses/ffmpeg/README.txt"
+        }
       ]
     },
     {
@@ -33,32 +45,69 @@
       "license": "BSD-3-Clause (Real-ESRGAN, Xintao Wang); ncnn BSD-3-Clause (Tencent)",
       "homepage": "https://github.com/xinntao/Real-ESRGAN",
       "files": [
-        { "from": "realesrgan-ncnn-vulkan.exe", "to": "bin/realesrgan-ncnn-vulkan.exe" },
-        { "from": "vcomp140.dll", "to": "bin/vcomp140.dll" },
-        { "from": "vcomp140d.dll", "to": "bin/vcomp140d.dll" },
-        { "from": "models/", "to": "models/realesrgan/" },
-        { "from": "README_windows.md", "to": "licenses/realesrgan/README_windows.md" }
+        {
+          "from": "realesrgan-ncnn-vulkan.exe",
+          "to": "bin/realesrgan-ncnn-vulkan.exe"
+        },
+        {
+          "from": "vcomp140.dll",
+          "to": "bin/vcomp140.dll"
+        },
+        {
+          "from": "vcomp140d.dll",
+          "to": "bin/vcomp140d.dll"
+        },
+        {
+          "from": "models/",
+          "to": "models/realesrgan/"
+        },
+        {
+          "from": "README_windows.md",
+          "to": "licenses/realesrgan/README_windows.md"
+        }
       ]
     },
     {
       "id": "rife",
       "name": "RIFE ncnn-vulkan + models",
-      "version": "20221029",
+      "version": "20250112-tntwise",
       "required": false,
       "platform": "windows-x64",
-      "url": "https://github.com/nihui/rife-ncnn-vulkan/releases/download/20221029/rife-ncnn-vulkan-20221029-windows.zip",
-      "sha256": "d8e4d772d26cd8006ef0ad0bc82eb191b53c68677d1ae2f42506d74cbbbea606",
-      "size": 431540241,
+      "url": "https://github.com/NobpasinTumdee/quick-enhancer/releases/download/models-2026.11/rife-ncnn-vulkan-20250112-tntwise-slim.zip",
+      "sha256": "a0fc5dd25cd9e81f27ebce07993ae37513a670681c53129e3a8062c9642cadbd",
+      "size": 42947140,
       "archive": "zip",
-      "license": "MIT (rife-ncnn-vulkan, nihui; RIFE models, hzwer / Megvii)",
-      "homepage": "https://github.com/nihui/rife-ncnn-vulkan",
+      "license": "MIT (rife-ncnn-vulkan, nihui; TNTwise fork; RIFE models, hzwer / Megvii)",
+      "homepage": "https://github.com/TNTwise/rife-ncnn-vulkan (repacked: exe + 4 models)",
       "files": [
-        { "from": "*/rife-ncnn-vulkan.exe", "to": "bin/rife-ncnn-vulkan.exe" },
-        { "from": "*/rife-v4.6/", "to": "models/rife/rife-v4.6/" },
-        { "from": "*/rife-v4/", "to": "models/rife/rife-v4/" },
-        { "from": "*/rife-v2.3/", "to": "models/rife/rife-v2.3/" },
-        { "from": "*/rife-anime/", "to": "models/rife/rife-anime/" },
-        { "from": "*/LICENSE", "to": "licenses/rife/LICENSE" }
+        {
+          "from": "*/rife-ncnn-vulkan.exe",
+          "to": "bin/rife-ncnn-vulkan.exe"
+        },
+        {
+          "from": "*/vcomp140.dll",
+          "to": "bin/vcomp140.dll"
+        },
+        {
+          "from": "*/rife-v4.6/",
+          "to": "models/rife/rife-v4.6/"
+        },
+        {
+          "from": "*/rife-v4/",
+          "to": "models/rife/rife-v4/"
+        },
+        {
+          "from": "*/rife-v4.26/",
+          "to": "models/rife/rife-v4.26/"
+        },
+        {
+          "from": "*/rife-v4.25-lite/",
+          "to": "models/rife/rife-v4.25-lite/"
+        },
+        {
+          "from": "*/LICENSE",
+          "to": "licenses/rife/LICENSE"
+        }
       ]
     }
   ]

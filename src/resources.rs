@@ -356,7 +356,47 @@ pub struct EstimateInput {
     pub out_w: u32,
     pub out_h: u32,
     pub out_fps: f64,
+    /// The AI stage runs on in-memory frames (ONNX): no PNG folders for it.
+    pub in_memory: bool,
+    /// AI cost relative to realesrgan-x4plus (the benchmark model) per source megapixel.
+    pub ai_factor: f64,
+    /// VRAM of the AI stage from the catalog (ONNX); `None` = ncnn tile estimate.
+    pub ai_vram: Option<u64>,
+    /// AI cleanup cost relative to realesrgan-x4plus (0 = off).
+    pub restore_factor: f64,
+    /// Face restoration: seconds per frame on the reference PC (about one face; 0 = off).
+    pub face_s: f64,
+    /// VRAM of the cleanup / face sessions that stay loaded next to the upscaler.
+    pub extra_vram: u64,
 }
+
+impl Default for EstimateInput {
+    fn default() -> Self {
+        EstimateInput {
+            video: true,
+            src_w: 1920,
+            src_h: 1080,
+            frames: 1800,
+            k: 2,
+            ai: true,
+            heavy: true,
+            model_w: 7680,
+            model_h: 4320,
+            out_w: 3840,
+            out_h: 2160,
+            out_fps: 60.0,
+            in_memory: false,
+            ai_factor: 1.0,
+            ai_vram: None,
+            restore_factor: 0.0,
+            face_s: 0.0,
+            extra_vram: 0,
+        }
+    }
+}
+
+/// Catalog cost of the benchmark model (realesrgan-x4plus) on the reference PC, s / MP.
+pub const X4PLUS_S_PER_MP: f64 = 6.0;
 
 /// Effective performance values the estimate is computed for.
 #[derive(Clone, Debug, PartialEq)]
@@ -420,29 +460,33 @@ pub fn estimate(i: &EstimateInput, m: &EstimateMachine, png_ratio: f64, bench: O
         out_frames: i.frames.max(1) * k,
         ..Default::default()
     };
+    let ai_disk = i.ai && !i.in_memory;
     if i.video {
-        e.disk_mode = i.ai || k > 1;
+        e.disk_mode = ai_disk || k > 1;
         let n = (m.chunk_frames as u64).min(i.frames.max(1)) + 1;
         e.chunks = i.frames.max(1).div_ceil(m.chunk_frames.max(1) as u64);
         if e.disk_mode {
             let src_png = png_bytes(i.src_w, i.src_h, png_ratio);
             let interp = if k > 1 { src_png * n * k } else { 0 };
-            let up = if i.ai { png_bytes(i.model_w, i.model_h, png_ratio) * n * k } else { 0 };
+            let up = if ai_disk { png_bytes(i.model_w, i.model_h, png_ratio) * n * k } else { 0 };
             e.temp_per_chunk = src_png * n + interp + up;
             e.temp_total = e.temp_per_chunk * CHUNKS_ON_DISK.min(e.chunks.max(1));
         }
         let (writer, batch, raw) = queue_caps(m.ram_budget, src_bytes, out_bytes, m.filter_threads);
         e.ram = writer * out_bytes + raw * src_bytes + batch * (model_bytes + out_bytes) + 400 * MB;
     } else {
-        e.disk_mode = i.ai;
+        e.disk_mode = ai_disk;
         e.chunks = 1;
-        if i.ai {
+        if ai_disk {
             e.temp_per_chunk = png_bytes(i.src_w, i.src_h, png_ratio) + png_bytes(i.model_w, i.model_h, png_ratio);
             e.temp_total = e.temp_per_chunk;
         }
         e.ram = src_bytes * 2 + model_bytes * 2 + out_bytes * 2 + 300 * MB;
     }
-    let up = i.ai.then(|| esrgan_vram(m.tile, i.heavy, m.procs));
+    let up = i
+        .ai
+        .then(|| i.ai_vram.unwrap_or_else(|| esrgan_vram(m.tile, i.heavy, m.procs)) + i.extra_vram)
+        .or((i.extra_vram > 0).then_some(i.extra_vram));
     let rife = (k > 1).then(|| rife_vram(i.src_w, i.src_h, i.src_w.min(i.src_h) >= 1440));
     e.vram = match (up, rife) {
         (Some(a), Some(b)) => Some(a.max(b)),
@@ -457,11 +501,18 @@ fn estimate_time(i: &EstimateInput, m: &EstimateMachine, e: &Estimate, b: &Bench
     let out_mp = i.out_w as f64 * i.out_h as f64 / 1e6;
     let frames = e.out_frames as f64;
     let mut t = 0.0;
+    // This PC's speed relative to the reference PC, from the x4plus benchmark.
+    let x4 = b.esrgan_ms_per_mp(m.tile) / 1000.0;
     if i.ai {
-        let factor = if i.heavy { 1.0 } else { 0.3 };
-        t += frames * src_mp * b.esrgan_ms_per_mp(m.tile) * factor / 1000.0;
-        t += b.esrgan_startup_s * e.chunks as f64;
+        t += frames * src_mp * x4 * i.ai_factor;
+        if !i.in_memory {
+            t += b.esrgan_startup_s * e.chunks as f64;
+        }
     }
+    // Cleanup runs on source frames, faces once per output frame of the AI stage.
+    let src_frames = i.frames.max(1) as f64;
+    t += src_frames * src_mp * x4 * i.restore_factor;
+    t += frames * i.face_s * x4 / X4PLUS_S_PER_MP;
     if i.k > 1 {
         t += frames * src_mp * b.rife_ms_per_mp.unwrap_or(40.0) / 1000.0;
         t += b.esrgan_startup_s * e.chunks as f64;
@@ -666,8 +717,7 @@ pub fn auto_tune(sys: &SystemInfo, bench: Option<&BenchResult>, m: &MachineSetti
     let k = typical.k.max(1) as f64;
     let per_src_frame_s = match bench {
         Some(b) => {
-            let factor = if typical.heavy { 1.0 } else { 0.3 };
-            let up = if typical.ai { k * src_mp * b.esrgan_ms_per_mp(tile) * factor / 1000.0 } else { 0.0 };
+            let up = if typical.ai { k * src_mp * b.esrgan_ms_per_mp(tile) * typical.ai_factor / 1000.0 } else { 0.0 };
             let rife = if typical.k > 1 { k * src_mp * b.rife_ms_per_mp.unwrap_or(40.0) / 1000.0 } else { 0.0 };
             (up + rife).max(0.005)
         }
@@ -722,6 +772,7 @@ mod estimate_tests {
             out_w: 3840,
             out_h: 2160,
             out_fps: 30.0 * k as f64,
+            ..Default::default()
         }
     }
 
@@ -797,6 +848,33 @@ mod estimate_tests {
         let t = estimate(&i, &mach(), 0.5, Some(&b)).time_secs.unwrap();
         // 6000 frames × 2.07 MP × 0.7 s ≈ 8700 s of upscaling alone.
         assert!(t > 8000.0 && t < 20000.0, "{t}");
+        // A model twice as heavy (catalog cost) takes about twice as long on this PC.
+        let t2 = estimate(&EstimateInput { ai_factor: 2.0, ..i.clone() }, &mach(), 0.5, Some(&b)).time_secs.unwrap();
+        assert!(t2 > t * 1.6, "{t} -> {t2}");
+        // Cleanup and faces add time; ONNX in memory needs no upscale PNGs.
+        let i3 = EstimateInput { restore_factor: 0.2, face_s: 0.1, ..i.clone() };
+        assert!(estimate(&i3, &mach(), 0.5, Some(&b)).time_secs.unwrap() > t);
+    }
+
+    #[test]
+    fn onnx_in_memory_estimate() {
+        let mem = EstimateInput {
+            k: 1,
+            in_memory: true,
+            ai_factor: 0.35 / X4PLUS_S_PER_MP,
+            ai_vram: Some(250 * MB),
+            extra_vram: 1500 * MB,
+            ..input_1080p(1, true)
+        };
+        let e = estimate(&mem, &mach(), 0.5, None);
+        assert!(!e.disk_mode);
+        assert_eq!(e.temp_total, 0);
+        assert_eq!(e.vram, Some(1750 * MB));
+        // With frame generation the source frames go to disk, but no upscaled PNGs.
+        let e2 = estimate(&EstimateInput { k: 2, ..mem.clone() }, &mach(), 0.5, None);
+        let src = 3_110_400u64;
+        assert!(e2.disk_mode);
+        assert_eq!(e2.temp_per_chunk, src * 121 + src * 121 * 2);
     }
 
     #[test]
@@ -834,7 +912,7 @@ mod estimate_tests {
 pub fn input_for(env: &crate::pipeline::job::Env, s: &JobSettings, info: &crate::media::probe::MediaInfo) -> Option<EstimateInput> {
     use crate::media::MediaKind;
     let cpu = crate::devices::resolve(s.compute, &env.gpus).is_none();
-    let b = crate::engines::choose_backend(s.profile, info.kind, &env.tools, &env.models, cpu).ok()?;
+    let b = crate::engines::choose_backend(s.profile, s.model.as_deref(), info.kind, &env.tools, &env.models, cpu).ok()?;
     let video = info.kind == MediaKind::Video;
     let p = crate::pipeline::plan::plan_scale(info.width, info.height, s.scale, &b.backend.native_scales(), video);
     let ai = b.backend.is_ai() && p.model_scale.is_some();
@@ -858,5 +936,37 @@ pub fn input_for(env: &crate::pipeline::job::Env, s: &JobSettings, info: &crate:
         out_w: p.out_w,
         out_h: p.out_h,
         out_fps: if video { f.out_fps.as_f64() } else { 0.0 },
+        ..catalog_costs(env, s, info.kind, b.backend.in_memory())
     })
+}
+
+/// Catalog-based cost of the AI stages of `s` (relative to the x4plus benchmark model).
+fn catalog_costs(
+    env: &crate::pipeline::job::Env,
+    s: &JobSettings,
+    kind: crate::media::MediaKind,
+    in_memory: bool,
+) -> EstimateInput {
+    let cat = &env.models.catalog;
+    let entry = |id: &str| cat.model(id);
+    let rel = |id: &str| entry(id).map(|m| m.cost.s_per_mp as f64 / X4PLUS_S_PER_MP);
+    let vram = |id: &str| entry(id).map(|m| m.cost.vram_mb as u64 * MB);
+    let up_id = crate::engines::active_model_id(s.profile, s.model.as_deref(), kind, &env.models);
+    let mut e = EstimateInput {
+        in_memory,
+        ai_factor: up_id.as_deref().and_then(rel).unwrap_or(1.0),
+        ai_vram: up_id.as_deref().filter(|_| in_memory).and_then(vram),
+        ..Default::default()
+    };
+    if s.restore_on {
+        e.restore_factor = rel(&s.restore_model).unwrap_or(0.25);
+        e.extra_vram += vram(&s.restore_model).unwrap_or(300 * MB);
+    }
+    if s.face_on {
+        // ~50 ms per face for GFPGAN on the reference PC; heavier models scale with VRAM.
+        let face_vram = vram(&s.face_model).unwrap_or(1500 * MB);
+        e.face_s = 0.05 * face_vram as f64 / (1500 * MB) as f64 + 0.01;
+        e.extra_vram += face_vram + vram("yunet").unwrap_or(50 * MB);
+    }
+    e
 }

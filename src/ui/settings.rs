@@ -109,6 +109,7 @@ pub fn enhancement(app: &mut App, ui: &mut egui::Ui) {
     let sel_info = app.selected_item().and_then(|i| i.info.clone());
     let cpu = crate::devices::resolve(app.config.machine.compute, &env.gpus).is_none();
     let s = app.config.settings_for_mut(app.studio);
+    let mut pick = crate::ui::models::ComboPick::None;
     egui::Grid::new("enh").num_columns(2).show(ui, |ui| {
         ui.label(t!("settings.profile"));
         egui::ComboBox::from_id_salt("profile")
@@ -116,7 +117,7 @@ pub fn enhancement(app: &mut App, ui: &mut egui::Ui) {
             .width(220.0)
             .show_ui(ui, |ui| {
                 for p in Profile::ALL {
-                    let why = profile_unavailable(p, kind, &env.tools, &env.models);
+                    let why = profile_unavailable(p, s.model.as_deref(), kind, &env.tools, &env.models);
                     let r = ui.add_enabled_ui(why.is_none(), |ui| {
                         ui.selectable_value(&mut s.profile, p, p.label())
                     });
@@ -125,6 +126,27 @@ pub fn enhancement(app: &mut App, ui: &mut egui::Ui) {
                     }
                 }
             });
+        ui.end_row();
+        if crate::engines::uses_model(s.profile) {
+            ui.label(t!("settings.model"));
+            pick = crate::ui::models::upscale_model_combo(ui, "upmodel", &app.models_ui, &env.models, &mut s.model);
+            ui.end_row();
+        }
+        ui.label(t!("settings.restore"));
+        ui.horizontal_wrapped(|ui| {
+            let p = restore_picker(ui, "restoremodel", &app.models_ui, &env.models, s);
+            if !matches!(p, crate::ui::models::ComboPick::None) {
+                pick = p;
+            }
+        });
+        ui.end_row();
+        ui.label(t!("settings.faces"));
+        ui.horizontal_wrapped(|ui| {
+            let p = face_picker(ui, "facemodel", &app.models_ui, s);
+            if !matches!(p, crate::ui::models::ComboPick::None) {
+                pick = p;
+            }
+        });
         ui.end_row();
         ui.label(t!("settings.scale"));
         egui::ComboBox::from_id_salt("scale")
@@ -145,12 +167,14 @@ pub fn enhancement(app: &mut App, ui: &mut egui::Ui) {
         Profile::General => t!("settings.model_general"),
         Profile::NoAi => t!("settings.model_none"),
     };
-    hint(ui, model_text);
-    if let Some(why) = profile_unavailable(s.profile, kind, &env.tools, &env.models) {
+    if s.model.is_none() || !crate::engines::uses_model(s.profile) {
+        hint(ui, model_text);
+    }
+    if let Some(why) = profile_unavailable(s.profile, s.model.as_deref(), kind, &env.tools, &env.models) {
         ui.colored_label(WARN, format!("⚠ {why}"));
     }
     if let Some(info) = sel_info.filter(|_| s.upscale_on)
-        && let Ok(b) = choose_backend(s.profile, info.kind, &env.tools, &env.models, cpu)
+        && let Ok(b) = choose_backend(s.profile, s.model.as_deref(), info.kind, &env.tools, &env.models, cpu)
     {
         {
             let p = plan_scale(
@@ -169,6 +193,53 @@ pub fn enhancement(app: &mut App, ui: &mut egui::Ui) {
             }
         }
     }
+    let missing = crate::engines::missing_models(s, kind, &env.tools, &env.models);
+    let p = crate::ui::models::missing_row(ui, &app.models_ui, &missing);
+    if !matches!(p, crate::ui::models::ComboPick::None) {
+        pick = p;
+    }
+    crate::ui::models::handle_pick(app, pick);
+}
+
+/// "AI cleanup" checkbox + 1x restore model picker (settings grid and photo studio).
+pub fn restore_picker(
+    ui: &mut egui::Ui,
+    id_salt: &str,
+    mu: &crate::ui::models::ModelsUi,
+    models: &crate::paths::ModelSet,
+    s: &mut crate::config::JobSettings,
+) -> crate::ui::models::ComboPick {
+    ui.checkbox(&mut s.restore_on, "").on_hover_text(t!("settings.restore_hint"));
+    ui.add_enabled_ui(s.restore_on, |ui| {
+        let extra: Vec<(String, String)> = models
+            .custom
+            .iter()
+            .filter(|c| c.kind == crate::models::CustomKind::Onnx && c.scale == Some(1))
+            .map(|c| (c.id.clone(), format!("{} ({})", c.name, t!("settings.model_custom"))))
+            .collect();
+        crate::ui::models::model_combo(ui, id_salt, mu, crate::models::Group::Restore, &extra, &mut s.restore_model)
+    })
+    .inner
+}
+
+/// "Face restoration" checkbox, face model picker and strength slider.
+pub fn face_picker(
+    ui: &mut egui::Ui,
+    id_salt: &str,
+    mu: &crate::ui::models::ModelsUi,
+    s: &mut crate::config::JobSettings,
+) -> crate::ui::models::ComboPick {
+    ui.checkbox(&mut s.face_on, "").on_hover_text(t!("settings.faces_hint"));
+    ui.add_enabled_ui(s.face_on, |ui| {
+        let p = crate::ui::models::model_combo(ui, id_salt, mu, crate::models::Group::Face, &[], &mut s.face_model);
+        ui.add(
+            egui::Slider::new(&mut s.face_strength, 0.0..=1.0)
+                .text(t!("settings.face_strength"))
+                .fixed_decimals(2),
+        );
+        p
+    })
+    .inner
 }
 
 pub fn framegen(app: &mut App, ui: &mut egui::Ui) {
@@ -182,6 +253,7 @@ pub fn framegen(app: &mut App, ui: &mut egui::Ui) {
     }
     let model = env.models.rife_model(&s.rife_model).cloned();
     let arbitrary = model.as_ref().is_some_and(|m| m.arbitrary_count);
+    let mut pick = crate::ui::models::ComboPick::None;
     ui.add_enabled_ui(rife_ok, |ui| {
         egui::Grid::new("fg").num_columns(2).show(ui, |ui| {
             ui.label(t!("settings.mode"));
@@ -220,18 +292,35 @@ pub fn framegen(app: &mut App, ui: &mut egui::Ui) {
                 return;
             }
             ui.label(t!("settings.rife_model"));
-            egui::ComboBox::from_id_salt("rifemodel")
-                .selected_text(model.as_ref().map(|m| m.name.clone()).unwrap_or_else(|| "—".into()))
-                .show_ui(ui, |ui| {
-                    for m in &env.models.rife {
-                        let label = if m.arbitrary_count {
-                            m.name.clone()
-                        } else {
-                            t!("settings.rife_model_2x", name = &m.name)
-                        };
-                        ui.selectable_value(&mut s.rife_model, m.name.clone(), label);
-                    }
-                });
+            // Installed RIFE folders that the catalog doesn't list (older installs).
+            let extra: Vec<(String, String)> = env
+                .models
+                .rife
+                .iter()
+                .map(|m| {
+                    let label = if m.arbitrary_count {
+                        m.name.clone()
+                    } else {
+                        t!("settings.rife_model_2x", name = &m.name)
+                    };
+                    (m.name.clone(), label)
+                })
+                .collect();
+            if let Some(m) = &model
+                && s.rife_model != m.name
+                && !env.models.rife.iter().any(|r| r.name == s.rife_model)
+            {
+                // The configured model is gone: show what will actually be used.
+                s.rife_model = m.name.clone();
+            }
+            pick = crate::ui::models::model_combo(
+                ui,
+                "rifemodel",
+                &app.models_ui,
+                crate::models::Group::Interpolate,
+                &extra,
+                &mut s.rife_model,
+            );
             ui.end_row();
             ui.label(t!("settings.scene_cuts"));
             ui.horizontal_wrapped(|ui| {
@@ -259,6 +348,7 @@ pub fn framegen(app: &mut App, ui: &mut egui::Ui) {
         hint(ui, t!("settings.videos_only"));
     }
     hint(ui, t!("settings.framegen_hint"));
+    crate::ui::models::handle_pick(app, pick);
 }
 
 pub fn filters(app: &mut App, ui: &mut egui::Ui) {
@@ -562,7 +652,7 @@ pub fn video(app: &mut App, ui: &mut egui::Ui) {
         let free = free_space(&root);
         if let Some(info) = info.filter(|i| i.kind == MediaKind::Video) {
             let cpu = crate::devices::resolve(st.compute, &env.gpus).is_none();
-            if let Ok(b) = choose_backend(st.profile, info.kind, &env.tools, &env.models, cpu) {
+            if let Ok(b) = choose_backend(st.profile, st.model.as_deref(), info.kind, &env.tools, &env.models, cpu) {
                 let p = plan_scale(info.width, info.height, st.scale, &b.backend.native_scales(), true);
                 let k = info.fps.map(|f| plan_fps(f, st.framegen, st.max_fps).multiplier).unwrap_or(1);
                 let ai = b.backend.is_ai() && p.model_scale.is_some();

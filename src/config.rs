@@ -313,6 +313,17 @@ pub struct JobSettings {
     pub denoise_on: bool,
     pub sharpen_on: bool,
     pub profile: Profile,
+    /// Upscale model: catalog id or `custom:<name>`. `None` = the profile's default model.
+    /// Only used by the AI profiles (not Pixel art / No AI).
+    pub model: Option<String>,
+    /// 1x restoration before upscaling (JPEG cleanup / denoise), catalog id.
+    pub restore_on: bool,
+    pub restore_model: String,
+    /// Face restoration after upscaling, catalog id; `face_strength` 0..1 blends with the
+    /// upscaled face (and is CodeFormer's fidelity weight).
+    pub face_on: bool,
+    pub face_model: String,
+    pub face_strength: f32,
     pub scale: ScaleMode,
     pub framegen: FrameGenMode,
     pub max_fps: u32,
@@ -351,6 +362,11 @@ impl JobSettings {
         if !s.upscale_on {
             s.profile = Profile::NoAi;
             s.scale = ScaleMode::X1;
+            s.restore_on = false;
+            s.face_on = false;
+        }
+        if matches!(s.profile, Profile::PixelArt | Profile::NoAi) {
+            s.model = None;
         }
         if !s.framegen_on {
             s.framegen = FrameGenMode::Off;
@@ -559,7 +575,13 @@ impl Default for JobSettings {
             scale: ScaleMode::X2,
             framegen: FrameGenMode::Off,
             max_fps: 120,
-            rife_model: "rife-v4.6".into(),
+            rife_model: "rife-v4.26".into(),
+            model: None,
+            restore_on: false,
+            restore_model: "dejpg-1x".into(),
+            face_on: false,
+            face_model: "gfpgan-1.4".into(),
+            face_strength: 0.7,
             scene_detect: true,
             scene_threshold: 0.30,
             denoise: 0.0,
@@ -611,6 +633,15 @@ pub struct Config {
     pub update_check_asked: bool,
     /// Outputs page view options.
     pub outputs: OutputsView,
+    /// The first-run setup wizard was completed or skipped. A config file written by an older
+    /// version (no such key) belongs to an existing user: they get the classic "update the
+    /// changed tools" list instead of the first-run wizard.
+    #[serde(default = "existing_user")]
+    pub wizard_done: bool,
+    /// ONNX Runtime used for ONNX models (one per process; switching needs a restart).
+    pub onnx_runtime: crate::models::RuntimeKind,
+    /// Model ids whose non-commercial license the user accepted.
+    pub accepted_licenses: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, Default)]
@@ -648,6 +679,10 @@ impl Default for OutputsView {
     }
 }
 
+fn existing_user() -> bool {
+    true
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -669,6 +704,9 @@ impl Default for Config {
             auto_update_check: false,
             update_check_asked: false,
             outputs: OutputsView::default(),
+            wizard_done: false,
+            onnx_runtime: crate::models::RuntimeKind::DirectMl,
+            accepted_licenses: Vec::new(),
         }
     }
 }
@@ -738,6 +776,19 @@ impl Config {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn wizard_shows_for_new_users_only() {
+        assert!(!Config::default().wizard_done);
+        // A 2.1 config (no wizard_done key) is an existing user.
+        let old = toml::to_string(&Config::default()).unwrap().replace("wizard_done = false
+", "");
+        assert!(!old.contains("wizard_done"));
+        assert!(Config::parse(&old).unwrap().wizard_done);
+        // Saved after the wizard: stays as written.
+        let new = toml::to_string(&Config::default()).unwrap();
+        assert!(!Config::parse(&new).unwrap().wizard_done);
+    }
+
     use super::*;
 
     #[test]

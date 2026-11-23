@@ -34,6 +34,10 @@ pub struct StagePlan {
     pub kind: MediaKind,
     pub scale: ScalePlan,
     pub backend: UpscaleBackend,
+    /// 1x AI restoration (JPEG artefacts / noise) at source resolution, before upscaling.
+    pub restore: Option<Arc<dyn crate::engines::Upscaler>>,
+    /// Face restoration after the upscale.
+    pub faces: Option<Arc<crate::engines::onnx::face::FaceRestorer>>,
     pub denoise: f32,
     pub sharpen: SharpenParams,
     /// Local contrast strength (0 = off), applied after sharpening.
@@ -62,11 +66,34 @@ impl StagePlan {
         } else if cpu_only && s.compute == ComputeDevice::Auto && !env.gpus.is_empty() {
             warnings.push(crate::t!("warn.no_gpu"));
         }
-        let choice = choose_backend(s.profile, info.kind, &env.tools, &env.models, cpu_only)
+        let choice = choose_backend(s.profile, s.model.as_deref(), info.kind, &env.tools, &env.models, cpu_only)
             .map_err(PipelineError::Setup)?;
         if let Some(w) = choice.warning {
             warnings.push(w);
         }
+        let restore = if s.restore_on {
+            let r = crate::engines::restore_backend(&s.restore_model, &env.tools, &env.models)
+                .map_err(PipelineError::Setup)?;
+            if cpu_only {
+                warnings.push(crate::t!("warn.restore_cpu"));
+            }
+            Some(r)
+        } else {
+            None
+        };
+        let faces = if s.face_on {
+            let f = crate::engines::face_backend(&s.face_model, s.face_strength, &env.models)
+                .map_err(PipelineError::Setup)?;
+            if cpu_only {
+                warnings.push(crate::t!("warn.face_cpu"));
+            }
+            if info.kind == MediaKind::Video {
+                warnings.push(crate::t!("warn.face_video"));
+            }
+            Some(Arc::new(f))
+        } else {
+            None
+        };
         let even = info.kind == MediaKind::Video;
         let scale = plan_scale(
             info.width,
@@ -90,6 +117,8 @@ impl StagePlan {
             kind: info.kind,
             scale,
             backend: choice.backend,
+            restore,
+            faces,
             denoise: s.denoise,
             sharpen: SharpenParams {
                 mode: s.sharpen,
@@ -112,9 +141,49 @@ impl StagePlan {
         self.tile.load(Ordering::Relaxed)
     }
 
-    /// AI stage needs image files on disk.
+    /// AI stage needs image files on disk (ncnn CLI tools).
     pub fn needs_disk(&self) -> bool {
-        self.backend.is_ai() && self.scale.model_scale.is_some()
+        self.backend.is_ai() && self.scale.model_scale.is_some() && !self.backend.in_memory()
+    }
+
+    /// AI stage runs on in-memory frames (ONNX), or faces are restored.
+    pub fn ai_in_memory(&self) -> bool {
+        (self.backend.in_memory() && self.scale.model_scale.is_some()) || self.faces.is_some()
+    }
+
+    /// Face restoration on an (upscaled) frame; no-op when off.
+    pub fn faces_mem(&self, img: RgbImage, cancel: &CancelToken) -> Result<RgbImage, PipelineError> {
+        let Some(f) = &self.faces else { return Ok(img) };
+        f.restore(img, &self.engine_ctx(cancel)).map_err(|e| {
+            if e.is_cancelled() {
+                PipelineError::Cancelled
+            } else {
+                PipelineError::Engine(e)
+            }
+        })
+    }
+
+    /// In-memory AI after decoding / disk upscaling: ONNX upscale, then faces.
+    pub fn ai_mem(&self, img: RgbImage, cancel: &CancelToken) -> Result<RgbImage, PipelineError> {
+        let img = self.upscale_mem(img, cancel)?;
+        self.faces_mem(img, cancel)
+    }
+
+    /// In-memory AI upscale of one frame (no-op without an in-memory AI stage).
+    pub fn upscale_mem(&self, img: RgbImage, cancel: &CancelToken) -> Result<RgbImage, PipelineError> {
+        let (UpscaleBackend::Ai(engine), Some(scale)) = (&self.backend, self.scale.model_scale) else {
+            return Ok(img);
+        };
+        if !engine.in_memory() {
+            return Ok(img);
+        }
+        engine.upscale_image(&img, scale, &self.engine_ctx(cancel)).map_err(|e| {
+            if e.is_cancelled() {
+                PipelineError::Cancelled
+            } else {
+                PipelineError::Engine(e)
+            }
+        })
     }
 
     /// Size of frames coming out of the AI stage (or source size without AI).
@@ -132,7 +201,33 @@ impl StagePlan {
         }
     }
 
-    /// Stage 1: denoise at source resolution.
+    fn engine_ctx<'a>(&self, cancel: &'a CancelToken) -> EngineCtx<'a> {
+        EngineCtx {
+            cancel,
+            gpu: self.gpu,
+            jobs: self.resources.jobs.clone(),
+            tile: self.tile(),
+            priority: self.resources.priority,
+            progress: None,
+        }
+    }
+
+    /// Stage 1: AI restoration (if enabled), then denoise, at source resolution.
+    pub fn pre_stage(&self, img: RgbImage, cancel: &CancelToken) -> Result<RgbImage, PipelineError> {
+        let img = match &self.restore {
+            Some(r) => r.upscale_image(&img, 1, &self.engine_ctx(cancel)).map_err(|e| {
+                if e.is_cancelled() {
+                    PipelineError::Cancelled
+                } else {
+                    PipelineError::Engine(e)
+                }
+            })?,
+            None => img,
+        };
+        Ok(self.pre_filter(img))
+    }
+
+    /// Denoise at source resolution.
     pub fn pre_filter(&self, img: RgbImage) -> RgbImage {
         if self.denoise <= 0.0 {
             return img;
@@ -213,7 +308,7 @@ impl StagePlan {
         work: &Path,
         cancel: &CancelToken,
     ) -> Result<RgbImage, PipelineError> {
-        let img = self.pre_filter(img);
+        let img = self.pre_stage(img, cancel)?;
         if cancel.is_cancelled() {
             return Err(PipelineError::Cancelled);
         }
@@ -239,8 +334,9 @@ impl StagePlan {
             let _ = std::fs::remove_dir_all(&out_dir);
             out
         } else {
-            img
+            self.upscale_mem(img, cancel)?
         };
+        let img = self.faces_mem(img, cancel)?;
         if cancel.is_cancelled() {
             return Err(PipelineError::Cancelled);
         }
@@ -258,6 +354,12 @@ impl StagePlan {
         )];
         if self.scale.needs_resize || self.scale.model_scale.is_some() {
             parts.push(self.scale.note.clone());
+        }
+        if let Some(r) = &self.restore {
+            parts.insert(0, format!("{} →", r.name()));
+        }
+        if let Some(f) = &self.faces {
+            parts.push(format!("+ {}", f.name));
         }
         parts.join(" · ")
     }

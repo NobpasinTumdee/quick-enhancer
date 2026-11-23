@@ -23,9 +23,12 @@ attach a `latest.json` next to the installer. `scripts\release.ps1` produces bot
 2. [ ] Bump `version` in `Cargo.toml` (semver `MAJOR.MINOR.PATCH`). This is the only place.
 3. [ ] Add a `## [x.y.z] — YYYY-MM-DD` section to `CHANGELOG.md`.
 4. [ ] If a tool changed: update `tools.json` (see below) and run the archive test.
+   If the model catalog changed: publish the models release / `models.json` first (see *Models
+   release*) and run the real model tests (`cargo test --test models_real -- --ignored`).
 5. [ ] If UI text changed: both `locales/en.toml` and `locales/th.toml` are updated (the tests
    check this).
-6. [ ] Run the release script (clippy + tests + build + installer + checksum + manifest):
+6. [ ] Run the release script (clippy + tests + build + MinGW DLL check + installer +
+   `portable.txt` check + checksum + manifest):
 
    ```powershell
    powershell -ExecutionPolicy Bypass -File scripts\release.ps1 `
@@ -163,6 +166,50 @@ Steps:
    Then `cargo test` (a unit test validates the embedded manifest) and run the app once with
    *Manage tools* to watch it install.
 6. Pass `-ToolsChanges <id>` to `release.ps1`.
+
+## Models release (`models-YYYY.MM`)
+
+Converted model files (ONNX / ncnn), the slim RIFE repack and `models.json` are hosted on a
+separate GitHub release, e.g. `models-2026.11`. It is **not** an app release: the app's update
+check reads `releases/latest`, so this release must never become "Latest".
+
+Only upload files whose license allows redistribution (`license.redistribute` in the catalog;
+the catalog test fails if a non-redistributable model points at our release). Models with a
+non-commercial license (CodeFormer) may be hosted only with their license text and are labelled
+"Non-commercial" in the app.
+
+1. Convert / export the models with the scripts in `tools/convert/` (the
+   [README](../tools/convert/README.md) has the recipe for every published file), check each with
+   `compare.py` against the PyTorch weights, and try it in the app (drop it into
+   `models/custom/`) on DirectML and on the CPU.
+2. Update the table in `tools/catalog/gen_models_json.py` (file name, SHA-256, size, license),
+   bump `catalog_version`, and regenerate the catalog:
+
+   ```sh
+   sha256sum <files>; stat -c %s <files>
+   python tools/catalog/gen_models_json.py models.json
+   cargo test models::
+   ```
+
+3. Put the files, `models.json`, a `MODELS-LICENSES.md` (file → original model, author, license,
+   changes made) and each license text (CC-BY-4.0, Apache-2.0, MIT, S-Lab …) in one folder, then
+   create the release **not as a draft and not as latest**:
+
+   ```powershell
+   gh release create models-2026.11 --latest=false --title "Models 2026.11" --notes-file notes.md <files…>
+   ```
+
+4. Check that `releases/latest` still points at the app release, and that a download matches its
+   hash:
+
+   ```powershell
+   gh api repos/NobpasinTumdee/quick-enhancer/releases/latest --jq .tag_name   # → v2.x.y
+   ```
+
+5. To publish a newer catalog without an app update, upload the new `models.json` to the release
+   that `update_url` points at (`gh release upload models-2026.11 models.json --clobber`). The app
+   uses it only when its `schema` matches and its `catalog_version` is newer than the embedded one.
+   Never replace a model file in place: a new file needs a new name (old catalogs pin the hash).
 
 ## Code signing and SmartScreen
 

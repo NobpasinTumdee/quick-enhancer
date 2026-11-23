@@ -81,20 +81,62 @@ pub fn current_platform() -> &'static str {
     }
 }
 
+impl Component {
+    /// Basic sanity checks shared by `tools.json` and `models.json`: hex SHA-256, pinned
+    /// https URL, a supported archive type (`zip`, or `file` = the download itself is the
+    /// single destination file) and safe destination paths.
+    pub fn validate(&self, what: &str) -> Result<(), NetError> {
+        let bad = |m: String| Err(NetError::Invalid(format!("{what}: {m} ({})", self.id)));
+        if self.sha256.len() != 64 || !self.sha256.chars().all(|ch| ch.is_ascii_hexdigit()) {
+            return bad("bad sha256".into());
+        }
+        if !self.url.starts_with("https://") || self.url.contains("/latest/") {
+            return bad(format!("URL must be a pinned https URL: {}", self.url));
+        }
+        match self.archive.as_str() {
+            "zip" => {}
+            "file" if self.files.len() == 1 && !self.files[0].to.ends_with('/') => {}
+            "file" => return bad("a 'file' package needs exactly one destination file".into()),
+            other => return bad(format!("unsupported archive type '{other}'")),
+        }
+        if self.files.is_empty() {
+            return bad("no files".into());
+        }
+        if self.files.iter().any(|f| safe_rel(&f.to).is_none()) {
+            return bad("unsafe destination path".into());
+        }
+        Ok(())
+    }
+
+    /// Destination paths (relative to the tools root) this package writes: files, or
+    /// directories for `dir/` rules.
+    pub fn destinations(&self) -> Vec<String> {
+        self.files.iter().map(|f| f.to.clone()).collect()
+    }
+
+    /// Are all destinations present under `root`?
+    pub fn is_present(&self, root: &Path) -> bool {
+        self.files.iter().all(|f| {
+            let p = root.join(f.to.trim_end_matches('/'));
+            if f.to.ends_with('/') {
+                std::fs::read_dir(&p).map(|mut d| d.next().is_some()).unwrap_or(false)
+            } else {
+                p.is_file()
+            }
+        })
+    }
+
+    pub fn for_this_platform(&self) -> bool {
+        self.platform == current_platform() || self.platform == "any"
+    }
+}
+
 impl ToolsManifest {
     pub fn parse(text: &str) -> Result<ToolsManifest, NetError> {
         let m: ToolsManifest =
             serde_json::from_str(text).map_err(|e| NetError::Invalid(format!("tools.json: {e}")))?;
         for c in &m.components {
-            if c.sha256.len() != 64 || !c.sha256.chars().all(|ch| ch.is_ascii_hexdigit()) {
-                return Err(NetError::Invalid(format!("tools.json: bad sha256 for {}", c.id)));
-            }
-            if c.archive != "zip" {
-                return Err(NetError::Invalid(format!(
-                    "tools.json: unsupported archive type '{}' for {}",
-                    c.archive, c.id
-                )));
-            }
+            c.validate("tools.json")?;
         }
         Ok(m)
     }
@@ -107,7 +149,7 @@ impl ToolsManifest {
     pub fn for_platform(&self) -> Vec<Component> {
         self.components
             .iter()
-            .filter(|c| c.platform == current_platform())
+            .filter(|c| c.for_this_platform())
             .cloned()
             .collect()
     }
@@ -248,6 +290,49 @@ pub fn extract_selected(
         )));
     }
     Ok(written)
+}
+
+/// Put a single downloaded (or local) file into `staging/<to>`. A file from our own downloads
+/// folder is moved (models can be several GB); a user-provided file is copied.
+fn stage_single_file(src: &Path, to: &str, staging: &Path, owned: bool) -> Result<Vec<PathBuf>, NetError> {
+    let rel = safe_rel(to).ok_or_else(|| NetError::Invalid(format!("unsafe destination: {to}")))?;
+    let dest = staging.join(&rel);
+    if let Some(d) = dest.parent() {
+        std::fs::create_dir_all(d)?;
+    }
+    if !(owned && std::fs::rename(src, &dest).is_ok()) {
+        std::fs::copy(src, &dest)?;
+    }
+    Ok(vec![rel])
+}
+
+/// Remove an installed package's files (uninstall). Directory rules remove the directory.
+/// Destinations listed in `keep` (written by other installed packages too) stay.
+pub fn remove_package(
+    paths: &AppPaths,
+    comp: &Component,
+    keep: &std::collections::BTreeSet<String>,
+) -> std::io::Result<()> {
+    for f in &comp.files {
+        if keep.contains(&f.to) {
+            continue;
+        }
+        let Some(rel) = safe_rel(&f.to) else { continue };
+        let p = paths.base.join(rel);
+        let r = if f.to.ends_with('/') {
+            std::fs::remove_dir_all(&p)
+        } else {
+            std::fs::remove_file(&p)
+        };
+        match r {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(e),
+        }
+    }
+    let mut state = InstalledTools::load(&paths.tools_state_file);
+    state.components.remove(&comp.id);
+    state.save(&paths.tools_state_file)
 }
 
 /// Move staged files into the tools root, replacing existing ones. Each file is renamed
@@ -424,8 +509,14 @@ pub fn install_one(
     report(CompStatus::Extracting);
     let staging = root.join(format!(".staging-{}", comp.id));
     let _ = std::fs::remove_dir_all(&staging);
-    let result = extract_selected(&archive, &comp.files, &staging, cancel)
-        .and_then(|files| commit_staged(&staging, root, &files));
+    let result = if comp.archive == "file" {
+        // The download is the file itself: stage it under its destination name.
+        stage_single_file(&archive, &comp.files[0].to, &staging, matches!(src, Source::Download))
+            .and_then(|files| commit_staged(&staging, root, &files))
+    } else {
+        extract_selected(&archive, &comp.files, &staging, cancel)
+            .and_then(|files| commit_staged(&staging, root, &files))
+    };
     let _ = std::fs::remove_dir_all(&staging);
     result?;
     // Downloaded archives are not needed any more.
@@ -568,6 +659,54 @@ mod tests {
         let r = install_one(&paths, &missing, &Source::LocalFile(zip_path), &CancelToken::new(), &mut |_| {});
         assert!(matches!(r, Err(NetError::Invalid(_))));
         assert_eq!(std::fs::read(paths.bin.join("tool.exe")).unwrap(), b"KEEP");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn single_file_package_installs_verifies_and_uninstalls() {
+        let d = std::env::temp_dir().join(format!("qe-file-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        let src = d.join("model.onnx");
+        std::fs::write(&src, b"ONNX-BYTES").unwrap();
+        let comp = Component {
+            id: "m".into(),
+            name: "M".into(),
+            version: "1".into(),
+            required: false,
+            platform: "any".into(),
+            url: "https://example.invalid/model.onnx".into(),
+            sha256: http::sha256_file(&src).unwrap(),
+            size: 10,
+            archive: "file".into(),
+            license: String::new(),
+            homepage: String::new(),
+            files: vec![FileRule { from: "model.onnx".into(), to: "models/onnx/m.onnx".into() }],
+        };
+        comp.validate("test").unwrap();
+        assert!(comp.for_this_platform());
+        let paths = AppPaths::from_base(d.join("root"));
+        assert!(!comp.is_present(&paths.base));
+        install_one(&paths, &comp, &Source::LocalFile(src.clone()), &CancelToken::new(), &mut |_| {}).unwrap();
+        assert_eq!(std::fs::read(paths.base.join("models/onnx/m.onnx")).unwrap(), b"ONNX-BYTES");
+        assert!(src.is_file(), "a user-provided file is copied, not moved");
+        assert!(comp.is_present(&paths.base));
+        assert_eq!(InstalledTools::load(&paths.tools_state_file).components.get("m").map(String::as_str), Some("1"));
+        // Corrupt source → rejected, installed file untouched.
+        std::fs::write(&src, b"TAMPERED").unwrap();
+        assert!(install_one(&paths, &comp, &Source::LocalFile(src.clone()), &CancelToken::new(), &mut |_| {}).is_err());
+        assert_eq!(std::fs::read(paths.base.join("models/onnx/m.onnx")).unwrap(), b"ONNX-BYTES");
+        // Uninstall removes the file and the record; `keep` protects shared destinations.
+        let keep: std::collections::BTreeSet<String> = ["models/onnx/m.onnx".to_string()].into();
+        remove_package(&paths, &comp, &keep).unwrap();
+        assert!(comp.is_present(&paths.base));
+        remove_package(&paths, &comp, &Default::default()).unwrap();
+        assert!(!comp.is_present(&paths.base));
+        assert!(!InstalledTools::load(&paths.tools_state_file).components.contains_key("m"));
+        // A 'file' package must have exactly one destination file.
+        let mut two = comp.clone();
+        two.files.push(FileRule { from: "x".into(), to: "models/x".into() });
+        assert!(two.validate("test").is_err());
         let _ = std::fs::remove_dir_all(&d);
     }
 }

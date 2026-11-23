@@ -80,6 +80,22 @@ if (-not (Test-Path $exe)) { throw "$exe not found" }
 $exeVer = (Get-Item $exe).VersionInfo.ProductVersion
 if ($exeVer -and $exeVer -ne $version) { throw "exe version $exeVer does not match Cargo.toml $version (stale build?)" }
 
+Step "Check that the exe imports no MinGW runtime DLLs"
+$objdump = (Get-Command objdump -ErrorAction SilentlyContinue).Source
+$wl = Join-Path $env:LOCALAPPDATA "mingw-winlibs\mingw64\bin\objdump.exe"
+if (-not $objdump -and (Test-Path $wl)) { $objdump = $wl }
+if ($objdump) {
+    $imports = & $objdump -p $exe 2>$null | Select-String "DLL Name:\s*(\S+)" | ForEach-Object { $_.Matches[0].Groups[1].Value }
+    if (-not $imports) { throw "objdump returned no imports for $exe" }
+    $bad = $imports | Where-Object { $_ -match '^(libgcc_s_.*|libwinpthread-.*|libstdc\+\+-.*)\.dll$' }
+    if ($bad) { throw "QuickEnhancer.exe depends on MinGW runtime DLLs: $($bad -join ', ') (static linking in .cargo/config.toml not applied?)" }
+    Write-Host "  imports: $($imports -join ', ')"
+} elseif ((rustc -vV 2>$null) -match 'host: .*windows-gnu') {
+    throw "objdump not found: cannot verify the GNU build (put WinLibs mingw64\bin on PATH)"
+} else {
+    Write-Host "  (objdump not found - skipped)" -ForegroundColor Yellow
+}
+
 Step "Sign exe"
 Invoke-CodeSign $exe
 
@@ -92,8 +108,16 @@ if (-not $Iscc) {
     ) | Where-Object { Test-Path $_ } | Select-Object -First 1
 }
 if (-not $Iscc) { throw "ISCC.exe (Inno Setup 6) not found; pass -Iscc <path>" }
-& $Iscc /Q "/DAppVersion=$version" "$root\installer\QuickEnhancer.iss"
-if ($LASTEXITCODE -ne 0) { throw "ISCC failed" }
+# Not /Q: ISCC prints a "Compressing: <file>" line for every file it packs, which is checked below.
+$isccOut = & $Iscc "/DAppVersion=$version" "$root\installer\QuickEnhancer.iss"
+if ($LASTEXITCODE -ne 0) { $isccOut | Select-Object -Last 20 | Write-Host; throw "ISCC failed" }
+$packed = @($isccOut | Where-Object { $_ -match '^\s*Compressing:\s+(.+?)\s*(\(.*\))?\s*$' } | ForEach-Object { $Matches[1].Trim() })
+if ($packed.Count -eq 0) { throw "could not read the packed file list from the ISCC output" }
+Write-Host ("  packed: " + (($packed | ForEach-Object { Split-Path $_ -Leaf }) -join ", "))
+# portable.txt next to the installed exe would switch the installed app to portable mode
+# (data written into the program folder instead of %LOCALAPPDATA%).
+$bad = @($packed | Where-Object { (Split-Path $_ -Leaf) -ieq "portable.txt" })
+if ($bad.Count -gt 0) { throw "the installer would contain portable.txt: $($bad -join ', ')" }
 $setupName = "QuickEnhancer-Setup-$version.exe"
 $setup = "$root\dist\$setupName"
 if (-not (Test-Path $setup)) { throw "$setup not produced" }

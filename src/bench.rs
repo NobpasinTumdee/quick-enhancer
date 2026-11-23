@@ -163,7 +163,7 @@ pub fn run(env: &Env, m: &MachineSettings, st: &Mutex<BenchState>, cancel: &Canc
 
     // 3. Real-ESRGAN (the photo model) at a few tile sizes.
     let gpu = crate::devices::resolve(m.compute, &env.gpus).map(|g| g.index);
-    let choice = choose_backend(Profile::Realistic, MediaKind::Video, &env.tools, &env.models, gpu.is_none());
+    let choice = choose_backend(Profile::Realistic, None, MediaKind::Video, &env.tools, &env.models, gpu.is_none());
     if let Ok(c) = choice
         && let UpscaleBackend::Ai(engine) = &c.backend
     {

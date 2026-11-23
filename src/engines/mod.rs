@@ -1,11 +1,12 @@
 //! Enhancement engines behind traits.
 //!
-//! * [`Upscaler`] — AI super-resolution (`realesrgan-ncnn-vulkan`, future `ort` backend).
+//! * [`Upscaler`] — AI super-resolution (ncnn CLI tools, or ONNX models in-process).
 //! * [`Interpolator`] — frame generation (`rife-ncnn-vulkan`).
 //! * `filters` / `resize` — pure-Rust CPU stages (rayon).
 
 pub mod filters;
-pub mod ort_stub;
+pub mod onnx;
+pub mod realcugan_ncnn;
 pub mod realesrgan_ncnn;
 pub mod resize;
 pub mod rife_ncnn;
@@ -83,6 +84,19 @@ pub trait Upscaler: Send + Sync {
     ) -> Result<(), EngineError>;
     /// Whether the engine can run on the CPU (`-g -1`).
     fn supports_cpu(&self) -> bool;
+    /// Works on in-memory images ([`Upscaler::upscale_image`]) without PNG files on disk.
+    fn in_memory(&self) -> bool {
+        false
+    }
+    /// Upscale one image in memory (only when [`Upscaler::in_memory`]).
+    fn upscale_image(
+        &self,
+        _img: &image::RgbImage,
+        _scale: u32,
+        _ctx: &EngineCtx,
+    ) -> Result<image::RgbImage, EngineError> {
+        Err(EngineError::Unavailable(format!("{} works on files only", self.name())))
+    }
 }
 
 pub trait Interpolator: Send + Sync {
@@ -127,6 +141,10 @@ impl UpscaleBackend {
     pub fn is_ai(&self) -> bool {
         matches!(self, UpscaleBackend::Ai(_))
     }
+    /// AI that runs on in-memory frames (ONNX).
+    pub fn in_memory(&self) -> bool {
+        matches!(self, UpscaleBackend::Ai(u) if u.in_memory())
+    }
 }
 
 pub struct BackendChoice {
@@ -166,13 +184,79 @@ fn ai_model_for(
     }
 }
 
-/// Why a profile can't be used right now (UI tooltip), `None` if usable.
+/// Catalog id of the upscale model a job would use (explicit choice, or the profile's model).
+pub fn active_model_id(profile: Profile, model: Option<&str>, kind: MediaKind, models: &ModelSet) -> Option<String> {
+    if !uses_model(profile) {
+        return None;
+    }
+    if let Some(id) = model {
+        return Some(id.to_string());
+    }
+    ai_model_for(profile, kind, models).ok().flatten().map(|(name, _)| name)
+}
+
+/// The profile's own model when it isn't installed (catalog id), for an "Install" button.
+fn profile_model_id(profile: Profile, kind: MediaKind) -> Option<&'static str> {
+    match (profile, kind) {
+        (Profile::Realistic, _) => Some("realesrgan-x4plus"),
+        (Profile::Anime, MediaKind::Video) => Some("realesr-animevideov3"),
+        (Profile::Anime, MediaKind::Image) => Some("realesrgan-x4plus-anime"),
+        _ => None,
+    }
+}
+
+/// Catalog models the settings need that aren't installed (upscale model, cleanup model,
+/// face model + detector, frame generation model), so the UI can offer to install them.
+pub fn missing_models(s: &crate::config::JobSettings, kind: MediaKind, tools: &ToolSet, models: &ModelSet) -> Vec<String> {
+    let s = s.effective();
+    let cat = &models.catalog;
+    let missing = |id: &str| cat.model(id).is_some_and(|m| !models.catalog_files_present(m));
+    let mut out: Vec<String> = Vec::new();
+    let mut add = |id: &str| {
+        if missing(id) && !out.iter().any(|o| o == id) {
+            out.push(id.to_string());
+        }
+    };
+    if uses_model(s.profile) {
+        match s.model.as_deref() {
+            Some(id) => add(id),
+            None => {
+                if ai_model_for(s.profile, kind, models).is_err()
+                    && let Some(id) = profile_model_id(s.profile, kind)
+                {
+                    add(id);
+                }
+            }
+        }
+    }
+    if s.restore_on {
+        add(&s.restore_model);
+    }
+    if s.face_on {
+        add(&s.face_model);
+        add("yunet");
+    }
+    if kind == MediaKind::Video && s.framegen != crate::config::FrameGenMode::Off {
+        let installed = models.rife.iter().any(|m| m.name == s.rife_model);
+        if tools.rife.is_none() || !installed {
+            add(&s.rife_model);
+        }
+    }
+    out
+}
+
+/// Why a profile (with an optional explicit model) can't be used right now (UI tooltip),
+/// `None` if usable.
 pub fn profile_unavailable(
     profile: Profile,
+    model: Option<&str>,
     kind: MediaKind,
     tools: &ToolSet,
     models: &ModelSet,
 ) -> Option<String> {
+    if let Some(id) = model.filter(|_| uses_model(profile)) {
+        return backend_for_model(id, tools, models).err();
+    }
     match ai_model_for(profile, kind, models) {
         Err(e) => Some(e),
         Ok(Some(_)) if tools.realesrgan.is_none() => {
@@ -182,14 +266,169 @@ pub fn profile_unavailable(
     }
 }
 
-/// Pick the upscale backend for a profile.
+/// Does the profile run an AI model (so an explicit model choice applies)?
+pub fn uses_model(profile: Profile) -> bool {
+    !matches!(profile, Profile::PixelArt | Profile::NoAi)
+}
+
+/// Face restoration stage for a catalog face model (with the YuNet detector).
+pub fn face_backend(id: &str, strength: f32, models: &ModelSet) -> Result<onnx::face::FaceRestorer, String> {
+    let m = models
+        .catalog
+        .model(id)
+        .ok_or_else(|| crate::t!("engine.unknown_model", name = id))?;
+    if m.group != crate::models::Group::Face {
+        return Err(crate::t!("engine.not_a_face_model", name = m.name.get()));
+    }
+    if !models.onnx_runtime {
+        return Err(crate::t!("engine.onnx_unavailable"));
+    }
+    let det = models
+        .catalog
+        .model("yunet")
+        .ok_or_else(|| crate::t!("engine.unknown_model", name = "yunet"))?;
+    for need in [m, det] {
+        if !models.catalog_files_present(need) {
+            return Err(crate::t!("engine.model_not_installed", name = need.name.get()));
+        }
+    }
+    let file = |e: &crate::models::ModelEntry| {
+        e.onnx
+            .as_ref()
+            .map(|o| models.base.join(&o.file))
+            .ok_or_else(|| crate::t!("engine.not_a_face_model", name = e.name.get()))
+    };
+    Ok(onnx::face::FaceRestorer::new(m.name.get().to_string(), file(det)?, file(m)?, strength))
+}
+
+/// 1x restoration model (catalog group "restore", or a 1x custom ONNX model).
+pub fn restore_backend(id: &str, tools: &ToolSet, models: &ModelSet) -> Result<Arc<dyn Upscaler>, String> {
+    if let Some(m) = models.catalog.model(id)
+        && m.group != crate::models::Group::Restore
+    {
+        return Err(crate::t!("engine.not_a_restorer", name = m.name.get()));
+    }
+    let b = backend_for_model(id, tools, models)?;
+    if b.native_scales() != [1] || !b.in_memory() {
+        return Err(crate::t!("engine.not_a_restorer", name = b.name()));
+    }
+    Ok(b)
+}
+
+/// Upscaler for an explicit model id (catalog id or `custom:<name>`), or why it can't run.
+pub fn backend_for_model(
+    id: &str,
+    tools: &ToolSet,
+    models: &ModelSet,
+) -> Result<Arc<dyn Upscaler>, String> {
+    use crate::models::{Backend, CustomKind};
+    let realesrgan = || {
+        tools
+            .realesrgan
+            .clone()
+            .ok_or_else(|| crate::t!("engine.realesrgan_missing"))
+    };
+    if crate::models::custom::is_custom_id(id) {
+        let c = models
+            .custom_model(id)
+            .ok_or_else(|| crate::t!("engine.custom_missing", name = id))?;
+        return match c.kind {
+            CustomKind::Ncnn => {
+                let dir = c.path.parent().map(Path::to_path_buf).unwrap_or_default();
+                Ok(Arc::new(realesrgan_ncnn::RealEsrganNcnn::new(
+                    realesrgan()?,
+                    dir,
+                    c.name.clone(),
+                    vec![c.scale.unwrap_or(4)],
+                )))
+            }
+            CustomKind::Onnx => {
+                if !models.onnx_runtime {
+                    return Err(crate::t!("engine.onnx_unavailable"));
+                }
+                Ok(Arc::new(onnx::OnnxUpscaler::from_custom(
+                    c.name.clone(),
+                    c.path.clone(),
+                    c.scale,
+                    None,
+                )?))
+            }
+        };
+    }
+    let m = models
+        .catalog
+        .model(id)
+        .ok_or_else(|| crate::t!("engine.unknown_model", name = id))?;
+    if !models.catalog_files_present(m) {
+        return Err(crate::t!("engine.model_not_installed", name = m.name.get()));
+    }
+    let ncnn_name = m.ncnn_name.clone().unwrap_or_default();
+    match m.backend {
+        Backend::NcnnRealesrgan => {
+            let scales = if ncnn_name == "realesr-animevideov3" {
+                models.animevideo_scales()
+            } else {
+                m.scales.clone()
+            };
+            Ok(Arc::new(realesrgan_ncnn::RealEsrganNcnn::new(
+                realesrgan()?,
+                models.realesrgan_dir.clone(),
+                ncnn_name,
+                scales,
+            )))
+        }
+        Backend::NcnnRealcugan => {
+            let exe = tools
+                .realcugan
+                .clone()
+                .ok_or_else(|| crate::t!("engine.model_not_installed", name = m.name.get()))?;
+            let dir = models.base.join("models").join("realcugan").join(&ncnn_name);
+            Ok(Arc::new(realcugan_ncnn::RealCuganNcnn::new(exe, dir, m.scales.clone(), -1)))
+        }
+        Backend::Onnx => {
+            if !models.onnx_runtime {
+                return Err(crate::t!("engine.onnx_unavailable"));
+            }
+            let spec = m
+                .onnx
+                .as_ref()
+                .ok_or_else(|| crate::t!("engine.not_an_upscaler", name = m.name.get()))?;
+            if m.group != crate::models::Group::Upscale && m.group != crate::models::Group::Restore {
+                return Err(crate::t!("engine.not_an_upscaler", name = m.name.get()));
+            }
+            Ok(Arc::new(onnx::OnnxUpscaler::from_catalog(
+                m.name.get().to_string(),
+                &models.base,
+                spec,
+                m.max_scale(),
+            )))
+        }
+        Backend::NcnnRife => Err(crate::t!("engine.not_an_upscaler", name = m.name.get())),
+    }
+}
+
+/// Pick the upscale backend for a profile, or for an explicit `model` (AI profiles only).
 pub fn choose_backend(
     profile: Profile,
+    model: Option<&str>,
     kind: MediaKind,
     tools: &ToolSet,
     models: &ModelSet,
     cpu_only: bool,
 ) -> Result<BackendChoice, String> {
+    if let Some(id) = model.filter(|_| uses_model(profile)) {
+        let engine = backend_for_model(id, tools, models)?;
+        if cpu_only && !engine.supports_cpu() {
+            return Ok(BackendChoice {
+                backend: UpscaleBackend::Lanczos,
+                warning: Some(crate::t!("engine.no_cpu_mode")),
+            });
+        }
+        return Ok(BackendChoice {
+            backend: UpscaleBackend::Ai(engine),
+            warning: None,
+        });
+    }
     match profile {
         Profile::PixelArt => {
             return Ok(BackendChoice {
@@ -311,11 +550,109 @@ mod tests {
         let empty = ModelSet::default();
         let tools = ToolSet::default();
         assert!(
-            profile_unavailable(Profile::Realistic, MediaKind::Image, &tools, &empty).is_some()
+            profile_unavailable(Profile::Realistic, None, MediaKind::Image, &tools, &empty).is_some()
         );
-        assert!(profile_unavailable(Profile::PixelArt, MediaKind::Video, &tools, &empty).is_none());
-        let c = choose_backend(Profile::General, MediaKind::Video, &tools, &empty, false).unwrap();
+        assert!(profile_unavailable(Profile::PixelArt, None, MediaKind::Video, &tools, &empty).is_none());
+        let c = choose_backend(Profile::General, None, MediaKind::Video, &tools, &empty, false).unwrap();
         assert!(matches!(c.backend, UpscaleBackend::Lanczos));
         assert!(c.warning.is_some());
+    }
+
+    #[test]
+    fn explicit_models_resolve_or_explain() {
+        let d = std::env::temp_dir().join(format!("qe-eng-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        let touch = |rel: &str| {
+            let p = d.join(rel);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(p, b"x").unwrap();
+        };
+        let exe = |stem: &str| format!("bin/{stem}{}", std::env::consts::EXE_SUFFIX);
+        let paths = crate::paths::AppPaths::from_base(d.clone());
+        let models = ModelSet::discover(&paths.models);
+        let tools = ToolSet::from_bin_dir(&paths.bin);
+        // Not installed: a clear message, and the profile reports it too.
+        let e = backend_for_model("realcugan-se", &tools, &models).err().unwrap();
+        assert!(e.contains("Real-CUGAN"), "{e}");
+        assert!(profile_unavailable(Profile::Anime, Some("realcugan-se"), MediaKind::Video, &tools, &models).is_some());
+        // Pixel art ignores the model.
+        assert!(profile_unavailable(Profile::PixelArt, Some("realcugan-se"), MediaKind::Video, &tools, &models).is_none());
+        assert!(backend_for_model("nope", &tools, &models).is_err());
+        assert!(backend_for_model("custom:missing", &tools, &models).is_err());
+        // Installed Real-CUGAN: its engine, which can run on the CPU.
+        touch(&exe("realcugan-ncnn-vulkan"));
+        touch("bin/realcugan-ncnn-vulkan.exe");
+        touch("models/realcugan/models-se/up2x-conservative.param");
+        let models = ModelSet::discover(&paths.models);
+        let tools = ToolSet::from_bin_dir(&paths.bin);
+        let c = choose_backend(Profile::Anime, Some("realcugan-se"), MediaKind::Video, &tools, &models, true).unwrap();
+        assert!(c.backend.label().contains("Real-CUGAN"));
+        assert_eq!(c.backend.native_scales(), vec![2, 3, 4]);
+        // Custom ncnn model: Real-ESRGAN engine with the scale from the file name.
+        touch("models/custom/4x_Remacri.param");
+        touch("models/custom/4x_Remacri.bin");
+        touch(&exe("realesrgan-ncnn-vulkan"));
+        let models = ModelSet::discover(&paths.models);
+        let tools = ToolSet::from_bin_dir(&paths.bin);
+        let u = backend_for_model("custom:4x_Remacri", &tools, &models).unwrap();
+        assert_eq!(u.native_scales(), vec![4]);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn profile_model_selection_with_missing_models() {
+        use crate::config::{FrameGenMode, JobSettings};
+        let d = std::env::temp_dir().join(format!("qe-missing-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        let touch = |rel: &str| {
+            let p = d.join(rel);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(p, b"x").unwrap();
+        };
+        let paths = crate::paths::AppPaths::from_base(d.clone());
+        let load = || (ModelSet::discover(&paths.models), ToolSet::from_bin_dir(&paths.bin));
+        let (models, tools) = load();
+        let mut s = JobSettings { profile: Profile::Realistic, ..Default::default() };
+        // Nothing installed: the profile's own model is offered.
+        assert_eq!(missing_models(&s, MediaKind::Image, &tools, &models), ["realesrgan-x4plus"]);
+        assert_eq!(missing_models(&s, MediaKind::Video, &tools, &models), ["realesrgan-x4plus"]);
+        s.profile = Profile::Anime;
+        assert_eq!(missing_models(&s, MediaKind::Video, &tools, &models), ["realesr-animevideov3"]);
+        assert_eq!(missing_models(&s, MediaKind::Image, &tools, &models), ["realesrgan-x4plus-anime"]);
+        // No-AI profiles need nothing; an explicit model is checked instead of the profile's.
+        s.profile = Profile::NoAi;
+        assert!(missing_models(&s, MediaKind::Image, &tools, &models).is_empty());
+        s.profile = Profile::Realistic;
+        s.model = Some("span-nomosuni-2x".into());
+        assert_eq!(missing_models(&s, MediaKind::Image, &tools, &models), ["span-nomosuni-2x"]);
+        // Cleanup, faces (with the detector) and frame generation (video only).
+        s.restore_on = true;
+        s.face_on = true;
+        s.framegen_on = true;
+        s.framegen = FrameGenMode::X2;
+        let all = missing_models(&s, MediaKind::Video, &tools, &models);
+        assert_eq!(all, ["span-nomosuni-2x", "dejpg-1x", "gfpgan-1.4", "yunet", s.rife_model.as_str()]);
+        assert!(!missing_models(&s, MediaKind::Image, &tools, &models).contains(&s.rife_model));
+        // Upscaling off turns cleanup / faces off too.
+        let off = JobSettings { upscale_on: false, ..s.clone() };
+        assert_eq!(missing_models(&off, MediaKind::Image, &tools, &models), Vec::<String>::new());
+        // Installed models drop out of the list, and the active id follows the choice.
+        touch("models/onnx/span-nomosuni-2x.onnx");
+        touch("models/onnx/dejpg-realplksr-1x-fp16.onnx");
+        let (models, tools) = load();
+        let left = missing_models(&s, MediaKind::Image, &tools, &models);
+        assert_eq!(left, ["gfpgan-1.4", "yunet"]);
+        assert_eq!(
+            active_model_id(Profile::Realistic, Some("span-nomosuni-2x"), MediaKind::Image, &models).as_deref(),
+            Some("span-nomosuni-2x")
+        );
+        assert_eq!(active_model_id(Profile::PixelArt, Some("span-nomosuni-2x"), MediaKind::Image, &models), None);
+        // The profile's model is only reported once it is actually installed.
+        assert_eq!(active_model_id(Profile::Realistic, None, MediaKind::Image, &models), None);
+        touch("models/realesrgan/realesrgan-x4plus.param");
+        touch("models/realesrgan/realesrgan-x4plus.bin");
+        let (models, _) = load();
+        assert_eq!(active_model_id(Profile::Realistic, None, MediaKind::Image, &models).as_deref(), Some("realesrgan-x4plus"));
+        let _ = std::fs::remove_dir_all(&d);
     }
 }

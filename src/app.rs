@@ -32,6 +32,7 @@ pub enum Page {
     Video,
     Image,
     Editor,
+    Models,
     Outputs,
     Settings,
 }
@@ -206,6 +207,8 @@ pub struct App {
     pub page: Page,
     pub outputs: crate::outputs::OutputsState,
     pub tools_ui: crate::ui::tools::ToolsUi,
+    pub models_ui: crate::ui::models::ModelsUi,
+    pub wizard: crate::ui::wizard::Wizard,
     pub update_ui: crate::ui::update::UpdateUi,
     pub show_font_test: bool,
     /// Started with `--install-tools`: only the tools page is shown.
@@ -309,6 +312,7 @@ impl App {
                 (Vec::new(), Some(e))
             }
         };
+        crate::engines::onnx::runtime::configure(&paths.base, config.onnx_runtime, &gpus);
         let encoders = detect_encoders_bg(tools.ffmpeg.clone(), &ctx);
         let monitor = Monitor::start(Some(ctx.clone()));
         let env = Arc::new(Env {
@@ -344,6 +348,7 @@ impl App {
         let show_setup = false;
         let ask_update_optin = !config.update_check_asked && !tools_only;
         let auto_check = config.auto_update_check && !tools_only;
+        let models_ui = crate::ui::models::ModelsUi::new(&paths);
         let mut app = App {
             paths,
             saved_config: config.clone(),
@@ -371,6 +376,8 @@ impl App {
             page: Page::Queue,
             outputs,
             tools_ui: crate::ui::tools::ToolsUi::default(),
+            models_ui,
+            wizard: Default::default(),
             update_ui: crate::ui::update::UpdateUi::default(),
             show_font_test: start.font_test,
             tools_only,
@@ -393,7 +400,11 @@ impl App {
         app.refresh_sys();
         crate::ui::profiles::apply_defaults(&mut app);
         app.sync_monitor_gpu();
-        if tools_only || missing_tools {
+        // First run (and the installer's `--install-tools`): the setup wizard. Later starts
+        // with missing or outdated tools: the classic tools list.
+        if tools_only || (missing_tools && !app.config.wizard_done) {
+            app.wizard.open();
+        } else if missing_tools {
             app.tools_ui.open(&app.paths);
         }
         if auto_check {
@@ -1080,6 +1091,10 @@ impl App {
             self.refresh_outputs(ctx);
         }
         if self.tools_ui.take_finished(&self.paths) {
+            self.models_ui.rescan(&self.paths);
+            self.reload_tools(ctx);
+        }
+        if self.models_ui.take_finished(&self.paths) {
             self.reload_tools(ctx);
         }
         // Debounced re-render of the still preview.
@@ -1093,6 +1108,9 @@ impl App {
         }
         self.toasts
             .retain(|(t, _)| t.elapsed() < Duration::from_secs(6));
+        for n in crate::engines::onnx::runtime::take_notices() {
+            self.toast(n);
+        }
         // Persist settings (throttled).
         if self.config != self.saved_config && self.last_save.elapsed() > Duration::from_secs(2) {
             if let Err(e) = self.config.save(&self.paths.config_file) {
@@ -1206,6 +1224,8 @@ impl App {
             self.toast(t!("tools.restart_to_use"));
             return;
         }
+        crate::engines::onnx::runtime::configure(&self.paths.base, self.config.onnx_runtime, &self.env.gpus);
+        crate::engines::onnx::clear_cache();
         let encoders = detect_encoders_bg(tools.ffmpeg.clone(), ctx);
         let env = Arc::new(Env {
             tools,
@@ -1422,7 +1442,7 @@ impl eframe::App for App {
         }
 
         if self.tools_only {
-            crate::ui::tools::tools_only_page(self, ui);
+            crate::ui::wizard::wizard_page(self, ui);
             crate::ui::toasts(self, &ctx);
             return;
         }
@@ -1446,11 +1466,14 @@ impl eframe::App for App {
                 crate::ui::preview_panel(self, ui);
             }
             Page::Editor => crate::ui::editor::editor_page(self, ui),
+            Page::Models => crate::ui::models::models_page(self, ui),
             Page::Outputs => crate::ui::outputs::outputs_page(self, ui),
             Page::Settings => crate::ui::settings_page::settings_page(self, ui),
         }
         crate::ui::setup::setup_window(self, &ctx);
         crate::ui::tools::tools_window(self, &ctx);
+        crate::ui::wizard::wizard_window(self, &ctx);
+        crate::ui::models::models_dialogs(self, &ctx);
         crate::ui::update::update_window(self, &ctx);
         crate::ui::update::optin_modal(self, &ctx);
         crate::ui::fonttest::font_test_window(self, &ctx);
