@@ -44,27 +44,18 @@ pub enum Group {
     Restore,
     Face,
     Interpolate,
-    /// Whole-clip video models (SeedVR2).
-    Video,
     /// Support models (face detector); not shown on their own.
     Helper,
 }
 
 impl Group {
-    pub const SHOWN: [Group; 5] = [
-        Group::Upscale,
-        Group::Restore,
-        Group::Face,
-        Group::Interpolate,
-        Group::Video,
-    ];
+    pub const SHOWN: [Group; 4] = [Group::Upscale, Group::Restore, Group::Face, Group::Interpolate];
     pub fn label_key(self) -> &'static str {
         match self {
             Group::Upscale => "models.group_upscale",
             Group::Restore => "models.group_restore",
             Group::Face => "models.group_face",
             Group::Interpolate => "models.group_interpolate",
-            Group::Video => "models.group_video",
             Group::Helper => "models.group_helper",
         }
     }
@@ -311,7 +302,7 @@ impl Catalog {
                 return bad(format!("{}: unsafe file path", m.id));
             }
             match (m.backend, &m.onnx) {
-                (Backend::Onnx, None) if m.group != Group::Video => {
+                (Backend::Onnx, None) => {
                     return bad(format!("{}: ONNX model without an onnx spec", m.id));
                 }
                 (Backend::Onnx, Some(s)) => {
@@ -434,8 +425,9 @@ mod tests {
         assert!(cf.non_commercial());
         assert!(!c.model("gfpgan-1.4").unwrap().non_commercial());
         assert!(c.model("hatl-bhi-4x").unwrap().experimental);
-        assert!(c.model("seedvr2-3b").unwrap().experimental);
-        assert_eq!(c.model("seedvr2-3b").unwrap().needs_runtime(), Some(RuntimeNeed::Cuda));
+        let mut cuda_only = c.model("span-nomosuni-2x").unwrap().clone();
+        cuda_only.requires.push("runtime:cuda".into());
+        assert_eq!(cuda_only.needs_runtime(), Some(RuntimeNeed::Cuda));
         assert_eq!(c.model("span-nomosuni-2x").unwrap().needs_runtime(), Some(RuntimeNeed::Any));
         assert_eq!(c.model("realesrgan-x4plus").unwrap().needs_runtime(), None);
     }

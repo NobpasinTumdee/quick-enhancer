@@ -39,7 +39,7 @@ pub enum RuntimeKind {
     /// DirectML: any DirectX 12 GPU (NVIDIA, AMD, Intel). Small download.
     #[default]
     DirectMl,
-    /// CUDA + cuDNN: NVIDIA only, ~1 GB download, faster for some models; needed by SeedVR2.
+    /// CUDA + cuDNN: NVIDIA only, large download; an alternative to DirectML on NVIDIA cards.
     Cuda,
 }
 
@@ -338,12 +338,13 @@ mod tests {
         let snap = InstallSnapshot::scan(&paths, &cat, &tools);
         assert!(snap.runtime_dml && !snap.runtime_cuda);
         assert!(snap.ready(&cat, &tools, &gfp));
-        // SeedVR2 needs CUDA even when DirectML is installed.
-        let seed = cat.model("seedvr2-3b").unwrap();
-        let plan = install_plan(&cat, &tools, &snap, seed, RuntimeKind::DirectMl, false);
+        // A model that requires CUDA gets the CUDA runtime even when DirectML is installed.
+        let mut cuda_only = cat.model("span-nomosuni-2x").unwrap().clone();
+        cuda_only.requires.push("runtime:cuda".into());
+        let plan = install_plan(&cat, &tools, &snap, &cuda_only, RuntimeKind::DirectMl, false);
         assert!(plan.iter().any(|p| p.id == "ort-cuda"));
         assert!(plan.iter().any(|p| p.id == "cuda-cudnn"));
-        assert!(plan_size(&plan) > 4_000_000_000);
+        assert!(plan_size(&plan) > 500_000_000);
         let _ = std::fs::remove_dir_all(&paths.base);
     }
 

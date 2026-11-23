@@ -10,7 +10,6 @@ import json
 import sys
 
 REL = "https://github.com/NobpasinTumdee/quick-enhancer/releases/download/models-2026.11/"
-HF = "https://huggingface.co/moonbox-dev/SeedVR2-3B-ONNX/resolve/e2a111d55922e9059a0d663bc189da766fc6b775/int8/"
 PYPI = "https://files.pythonhosted.org/packages/"
 
 
@@ -126,19 +125,6 @@ for pid, name, file, sha, size, lic in [
      ("S-Lab License 1.0 (non-commercial)", "https://github.com/sczhou/CodeFormer")),
 ]:
     packages.append(file_pkg(pid, name, "2026.11", file, sha, size, "models/onnx/" + file, lic[0], lic[1]))
-
-SEED = [("dit.onnx", "e73874804e6062a81ea3a047ed74e671f27d54fee158408b04d803b0f6c95d21", 1630270),
-        ("dit.onnx.data", "c36caaa979408e6b3ad6c956ba55e92d9120ae0c84ac62bc8537543d6e79790f", 3555440304),
-        ("vae_enc_first.onnx", "d6a9041ed8a4eacf403229894704327dab9275218ac933dcd54cd44cb0db6dbe", 200468788),
-        ("vae_enc_next.onnx", "bcffa79fd16db2acc4953c043722f26defaa84723865a64a0a9cfe3af64f45d2", 200339836),
-        ("vae_dec_first.onnx", "8250314ef04dcae8adf28b5209baa254ba478537257206cce5f6670cd7eb05a7", 301715063),
-        ("vae_dec_next.onnx", "e300dd92f6f72a1bd2857fd3bbe04c5e31b71a93b88edd0ed390028baf46ff73", 301538837),
-        ("LICENSE.txt", "fa62fea050d25dbb5915b80cbb0a27b43317fe3c3fc614c0142b7d7429b24a3c", 11535)]
-for f, sha, size in SEED:
-    packages.append(file_pkg("seedvr2-" + f.replace(".", "-").lower(), f"SeedVR2-3B int8: {f}", "e2a111d", f, sha,
-                             size, "models/seedvr2/int8/" + f,
-                             "Apache-2.0 (ByteDance Seed; ONNX export by moonbox-dev)",
-                             "https://huggingface.co/moonbox-dev/SeedVR2-3B-ONNX", url=HF + f))
 
 
 def T(en, th):
@@ -286,20 +272,7 @@ for name, desc, speed, quality, vmin, s in [
                        vmin * 2, s, RIFE, "https://github.com/TNTwise/rife-ncnn-vulkan", ["rife"],
                        [f"models/rife/{name}/flownet.param", f"models/rife/{name}/flownet.bin"], ["video"]))
 
-models.append(dict(
-    id="seedvr2-3b", group="video", name=T("SeedVR2 3B (experimental)", "SeedVR2 3B (ทดลอง)"),
-    desc=T("Diffusion video restoration. NVIDIA (CUDA) only and very heavy: 4.5 GB download.",
-           "ฟื้นฟูวิดีโอด้วย diffusion ใช้ได้เฉพาะ NVIDIA (CUDA) และหนักมาก: ดาวน์โหลด 4.5 GB"),
-    backend="onnx", scales=[1, 2], speed=1, quality=5, vram_min_mb=10000, vram_rec_mb=12000,
-    cost=dict(s_per_mp=400.0, vram_mb=10000),
-    license=lic("Apache-2.0", "https://huggingface.co/moonbox-dev/SeedVR2-3B-ONNX",
-                "SeedVR2 by ByteDance Seed; ONNX export by moonbox-dev"),
-    source="https://huggingface.co/moonbox-dev/SeedVR2-3B-ONNX",
-    packages=[p["id"] for p in packages if p["id"].startswith("seedvr2-")],
-    files=["models/seedvr2/int8/" + f for f, _, _ in SEED], content=["video"], experimental=True,
-    requires=["runtime:cuda"]))
-
 with open(sys.argv[1], "w", encoding="utf-8", newline="\n") as fh:
-    json.dump(dict(schema=1, catalog_version="2026.11.1", update_url=REL + "models.json",
+    json.dump(dict(schema=1, catalog_version="2026.11.2", update_url=REL + "models.json",
                    packages=packages, models=models), fh, ensure_ascii=False, indent=1)
     fh.write("\n")

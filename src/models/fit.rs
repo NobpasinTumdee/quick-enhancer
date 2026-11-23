@@ -97,9 +97,11 @@ mod tests {
         assert_eq!(fit(dat, &[gpu(0x1002, 2500)]), Fit::Tight);
         assert_eq!(fit(dat, &[gpu(0x8086, 1024)]), Fit::TooBig);
         assert_eq!(fit(dat, &[]), Fit::NoGpu);
-        let seed = c.model("seedvr2-3b").unwrap();
-        assert_eq!(fit(seed, &[gpu(0x1002, 24000)]), Fit::NeedsNvidia);
-        assert_eq!(fit(seed, &[gpu(NVIDIA_VENDOR, 16000)]), Fit::Good);
+        // A model that needs the CUDA runtime.
+        let mut cuda_only = c.model("span-nomosuni-2x").unwrap().clone();
+        cuda_only.requires.push("runtime:cuda".into());
+        assert_eq!(fit(&cuda_only, &[gpu(0x1002, 24000)]), Fit::NeedsNvidia);
+        assert_eq!(fit(&cuda_only, &[gpu(NVIDIA_VENDOR, 16000)]), Fit::Good);
         assert!(!Fit::NeedsNvidia.runnable() && Fit::TooBig.runnable());
     }
 
