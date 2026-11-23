@@ -112,9 +112,39 @@ impl StagePlan {
         self.tile.load(Ordering::Relaxed)
     }
 
-    /// AI stage needs image files on disk.
+    /// AI stage needs image files on disk (ncnn CLI tools).
     pub fn needs_disk(&self) -> bool {
-        self.backend.is_ai() && self.scale.model_scale.is_some()
+        self.backend.is_ai() && self.scale.model_scale.is_some() && !self.backend.in_memory()
+    }
+
+    /// AI stage runs on in-memory frames (ONNX).
+    pub fn ai_in_memory(&self) -> bool {
+        self.backend.in_memory() && self.scale.model_scale.is_some()
+    }
+
+    /// In-memory AI upscale of one frame (no-op without an in-memory AI stage).
+    pub fn upscale_mem(&self, img: RgbImage, cancel: &CancelToken) -> Result<RgbImage, PipelineError> {
+        let (UpscaleBackend::Ai(engine), Some(scale)) = (&self.backend, self.scale.model_scale) else {
+            return Ok(img);
+        };
+        if !engine.in_memory() {
+            return Ok(img);
+        }
+        let ctx = EngineCtx {
+            cancel,
+            gpu: self.gpu,
+            jobs: self.resources.jobs.clone(),
+            tile: self.tile(),
+            priority: self.resources.priority,
+            progress: None,
+        };
+        engine.upscale_image(&img, scale, &ctx).map_err(|e| {
+            if e.is_cancelled() {
+                PipelineError::Cancelled
+            } else {
+                PipelineError::Engine(e)
+            }
+        })
     }
 
     /// Size of frames coming out of the AI stage (or source size without AI).
@@ -239,7 +269,7 @@ impl StagePlan {
             let _ = std::fs::remove_dir_all(&out_dir);
             out
         } else {
-            img
+            self.upscale_mem(img, cancel)?
         };
         if cancel.is_cancelled() {
             return Err(PipelineError::Cancelled);

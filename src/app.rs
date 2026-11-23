@@ -312,6 +312,7 @@ impl App {
                 (Vec::new(), Some(e))
             }
         };
+        crate::engines::onnx::runtime::configure(&paths.base, config.onnx_runtime, &gpus);
         let encoders = detect_encoders_bg(tools.ffmpeg.clone(), &ctx);
         let monitor = Monitor::start(Some(ctx.clone()));
         let env = Arc::new(Env {
@@ -1107,6 +1108,9 @@ impl App {
         }
         self.toasts
             .retain(|(t, _)| t.elapsed() < Duration::from_secs(6));
+        for n in crate::engines::onnx::runtime::take_notices() {
+            self.toast(n);
+        }
         // Persist settings (throttled).
         if self.config != self.saved_config && self.last_save.elapsed() > Duration::from_secs(2) {
             if let Err(e) = self.config.save(&self.paths.config_file) {
@@ -1220,6 +1224,8 @@ impl App {
             self.toast(t!("tools.restart_to_use"));
             return;
         }
+        crate::engines::onnx::runtime::configure(&self.paths.base, self.config.onnx_runtime, &self.env.gpus);
+        crate::engines::onnx::clear_cache();
         let encoders = detect_encoders_bg(tools.ffmpeg.clone(), ctx);
         let env = Arc::new(Env {
             tools,

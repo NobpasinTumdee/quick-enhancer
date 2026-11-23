@@ -1,11 +1,11 @@
 //! Enhancement engines behind traits.
 //!
-//! * [`Upscaler`] — AI super-resolution (`realesrgan-ncnn-vulkan`, future `ort` backend).
+//! * [`Upscaler`] — AI super-resolution (ncnn CLI tools, or ONNX models in-process).
 //! * [`Interpolator`] — frame generation (`rife-ncnn-vulkan`).
 //! * `filters` / `resize` — pure-Rust CPU stages (rayon).
 
 pub mod filters;
-pub mod ort_stub;
+pub mod onnx;
 pub mod realcugan_ncnn;
 pub mod realesrgan_ncnn;
 pub mod resize;
@@ -84,6 +84,19 @@ pub trait Upscaler: Send + Sync {
     ) -> Result<(), EngineError>;
     /// Whether the engine can run on the CPU (`-g -1`).
     fn supports_cpu(&self) -> bool;
+    /// Works on in-memory images ([`Upscaler::upscale_image`]) without PNG files on disk.
+    fn in_memory(&self) -> bool {
+        false
+    }
+    /// Upscale one image in memory (only when [`Upscaler::in_memory`]).
+    fn upscale_image(
+        &self,
+        _img: &image::RgbImage,
+        _scale: u32,
+        _ctx: &EngineCtx,
+    ) -> Result<image::RgbImage, EngineError> {
+        Err(EngineError::Unavailable(format!("{} works on files only", self.name())))
+    }
 }
 
 pub trait Interpolator: Send + Sync {
@@ -127,6 +140,10 @@ impl UpscaleBackend {
     }
     pub fn is_ai(&self) -> bool {
         matches!(self, UpscaleBackend::Ai(_))
+    }
+    /// AI that runs on in-memory frames (ONNX).
+    pub fn in_memory(&self) -> bool {
+        matches!(self, UpscaleBackend::Ai(u) if u.in_memory())
     }
 }
 
@@ -220,7 +237,17 @@ pub fn backend_for_model(
                     vec![c.scale.unwrap_or(4)],
                 )))
             }
-            CustomKind::Onnx => Err(crate::t!("engine.onnx_unavailable")),
+            CustomKind::Onnx => {
+                if !models.onnx_runtime {
+                    return Err(crate::t!("engine.onnx_unavailable"));
+                }
+                Ok(Arc::new(onnx::OnnxUpscaler::from_custom(
+                    c.name.clone(),
+                    c.path.clone(),
+                    c.scale,
+                    None,
+                )?))
+            }
         };
     }
     let m = models
@@ -253,7 +280,24 @@ pub fn backend_for_model(
             let dir = models.base.join("models").join("realcugan").join(&ncnn_name);
             Ok(Arc::new(realcugan_ncnn::RealCuganNcnn::new(exe, dir, m.scales.clone(), -1)))
         }
-        Backend::Onnx => Err(crate::t!("engine.onnx_unavailable")),
+        Backend::Onnx => {
+            if !models.onnx_runtime {
+                return Err(crate::t!("engine.onnx_unavailable"));
+            }
+            let spec = m
+                .onnx
+                .as_ref()
+                .ok_or_else(|| crate::t!("engine.not_an_upscaler", name = m.name.get()))?;
+            if m.group != crate::models::Group::Upscale && m.group != crate::models::Group::Restore {
+                return Err(crate::t!("engine.not_an_upscaler", name = m.name.get()));
+            }
+            Ok(Arc::new(onnx::OnnxUpscaler::from_catalog(
+                m.name.get().to_string(),
+                &models.base,
+                spec,
+                m.max_scale(),
+            )))
+        }
         Backend::NcnnRife => Err(crate::t!("engine.not_an_upscaler", name = m.name.get())),
     }
 }

@@ -236,6 +236,8 @@ pub struct ModelSet {
     pub catalog: std::sync::Arc<crate::models::Catalog>,
     /// Models in `models/custom/`.
     pub custom: Vec<crate::models::CustomModel>,
+    /// An ONNX runtime (DirectML or CUDA) is installed.
+    pub onnx_runtime: bool,
 }
 
 impl ModelSet {
@@ -276,6 +278,9 @@ impl ModelSet {
             rife,
             catalog: std::sync::Arc::new(crate::models::Catalog::load(&base)),
             custom: crate::models::custom::scan(&crate::models::custom::custom_dir(models_dir)),
+            onnx_runtime: [crate::models::RuntimeKind::DirectMl, crate::models::RuntimeKind::Cuda]
+                .into_iter()
+                .any(|k| crate::engines::onnx::runtime::runtime_installed(&base, k)),
             base,
         }
     }

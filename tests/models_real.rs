@@ -121,3 +121,106 @@ fn realcugan_and_ncnn_custom_models() {
         eprintln!("{model}: {}x{} mean {m:.0} ok", img.width(), img.height());
     }
 }
+
+fn psnr(a: &image::RgbImage, b: &image::RgbImage) -> f64 {
+    assert_eq!(a.dimensions(), b.dimensions());
+    let mse = a
+        .as_raw()
+        .iter()
+        .zip(b.as_raw())
+        .map(|(&x, &y)| (x as f64 - y as f64).powi(2))
+        .sum::<f64>()
+        / a.as_raw().len() as f64;
+    10.0 * (255.0f64 * 255.0 / mse.max(1e-9)).log10()
+}
+
+#[test]
+#[ignore = "downloads ~60 MB (ONNX Runtime DirectML + models) and needs a DirectX 12 GPU"]
+fn onnx_models_on_gpu_match_cpu_and_run_video_in_memory() {
+    use quick_enhancer::config::{ComputeDevice, EncoderChoice};
+    use quick_enhancer::media::encoders::VideoEncoder;
+    use quick_enhancer::models::RuntimeKind;
+    use quick_enhancer::pipeline::cancel::PauseFlag;
+    use quick_enhancer::pipeline::video_job::{VideoOptions, run_video};
+
+    let project_tools = ToolSet::from_bin_dir(&root().join("bin"));
+    let gpus = devices::enumerate().unwrap_or_default();
+    if project_tools.ffmpeg.is_none() || gpus.is_empty() {
+        eprintln!("SKIPPED: needs bin/ffmpeg and a GPU");
+        return;
+    }
+    let base = root().join("target").join("it-scratch").join("onnx-home");
+    let paths = AppPaths::from_base(base.clone());
+    install(&paths, &["ort-dml", "onnx-span-nomosuni", "onnx-realplksr-nomos2", "onnx-dejpg"]);
+    quick_enhancer::engines::onnx::runtime::configure(&base, RuntimeKind::DirectMl, &gpus);
+    let env = Env {
+        models: ModelSet::discover(&paths.models),
+        gpus: gpus.clone(),
+        encoders: Arc::new(RwLock::new(encoders::detect(project_tools.ffmpeg.as_deref()))),
+        monitor: None,
+        cores: 8,
+        tools: project_tools.clone(),
+    };
+    assert!(env.models.onnx_runtime);
+    let dir = base.join("work");
+    std::fs::create_dir_all(&dir).unwrap();
+    let src = dir.join("in.png");
+    image::RgbImage::from_fn(300, 180, |x, y| {
+        let v = ((x as f32 / 9.0).sin() * 60.0 + (y as f32 / 7.0).cos() * 60.0 + 128.0) as u8;
+        image::Rgb([v, (x % 256) as u8, (y * 2 % 256) as u8])
+    })
+    .save(&src)
+    .unwrap();
+
+    // (model, scale, static tile model?)
+    for (model, scale) in [("span-nomosuni-2x", ScaleMode::X2), ("realplksr-nomos2-4x", ScaleMode::X4)] {
+        let mut outs = Vec::new();
+        for compute in [ComputeDevice::Auto, ComputeDevice::Cpu] {
+            let mut s = JobSettings {
+                profile: Profile::Realistic,
+                model: Some(model.into()),
+                scale,
+                compute,
+                ..Default::default()
+            };
+            s.output.image_format = ImageFormat::Png;
+            s.video.temp_dir = Some(dir.clone());
+            let t = std::time::Instant::now();
+            let out = dir.join(format!("{model}_{compute:?}.png"));
+            let img = run(&env, s, &src, out);
+            eprintln!("{model} on {compute:?}: {:?} in {:.2}s", img.dimensions(), t.elapsed().as_secs_f32());
+            outs.push(img);
+        }
+        let f = if model.starts_with("span") { 2 } else { 4 };
+        assert_eq!(outs[0].dimensions(), (300 * f, 180 * f));
+        let p = psnr(&outs[0], &outs[1]);
+        eprintln!("{model}: GPU vs CPU PSNR {p:.1} dB");
+        assert!(p > 40.0, "{model}: GPU and CPU outputs differ ({p:.1} dB)");
+        let m = mean(&outs[0]);
+        assert!((40.0..220.0).contains(&m), "{model}: mean {m}");
+    }
+
+    // Video in memory mode with SPAN 2x (no PNG round trip).
+    let vid = dir.join("in.mp4");
+    let mut c = quick_enhancer::util::new_command(project_tools.ffmpeg.as_ref().unwrap());
+    c.args(["-hide_banner", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc=size=256x144:rate=24:duration=1", "-pix_fmt", "yuv420p"])
+        .arg(&vid);
+    quick_enhancer::util::run_capture(c, None, quick_enhancer::config::Priority::Normal).unwrap();
+    let info = probe::probe(project_tools.ffprobe.as_deref(), &vid).unwrap();
+    let mut s = JobSettings {
+        profile: Profile::Realistic,
+        model: Some("span-nomosuni-2x".into()),
+        scale: ScaleMode::X2,
+        ..Default::default()
+    };
+    s.output.encoder = EncoderChoice::Specific(VideoEncoder::Libx264);
+    s.video.temp_dir = Some(dir.clone());
+    let out = dir.join("out.mp4");
+    let spec = JobSpec { id: 2, info, settings: s, output: out.clone(), edit: None };
+    let r = run_video(&env, &spec, &ProgressHandle::default(), &CancelToken::new(), &PauseFlag::default(), &VideoOptions::default())
+        .expect("video job");
+    assert_eq!((r.out_w, r.out_h), (512, 288));
+    assert_eq!(r.frames, 24);
+    let notices = quick_enhancer::engines::onnx::runtime::take_notices();
+    eprintln!("notices: {notices:?}");
+}

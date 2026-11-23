@@ -768,6 +768,8 @@ fn process_chunks(
                                 PipelineError::Setup(format!("reading {}: {e}", p.display()))
                             })?
                             .into_rgb8();
+                        // In-memory AI (ONNX) after frame generation; sessions serialize.
+                        let img = plan.upscale_mem(img, stop)?;
                         Ok(plan.post_process(img))
                     })
                     .collect()
@@ -817,6 +819,16 @@ fn process_memory(
         pause.wait_while_paused(stop);
         if stop.is_cancelled() {
             return Err(PipelineError::Cancelled);
+        }
+        // In-memory AI (ONNX) runs frame by frame on the GPU; the CPU filters in parallel.
+        if plan.ai_in_memory() {
+            progress.stage(Stage::Upscale);
+            let mut up = Vec::with_capacity(group.len());
+            for f in group.drain(..) {
+                up.push(plan.upscale_mem(f, stop)?);
+            }
+            group = up;
+            progress.stage(Stage::Sharpen);
         }
         let out: Vec<RgbImage> = plan
             .pool
