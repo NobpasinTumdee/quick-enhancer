@@ -193,6 +193,11 @@ pub fn enhancement(app: &mut App, ui: &mut egui::Ui) {
             }
         }
     }
+    let missing = crate::engines::missing_models(s, kind, &env.tools, &env.models);
+    let p = crate::ui::models::missing_row(ui, &app.models_ui, &missing);
+    if !matches!(p, crate::ui::models::ComboPick::None) {
+        pick = p;
+    }
     crate::ui::models::handle_pick(app, pick);
 }
 

@@ -184,6 +184,67 @@ fn ai_model_for(
     }
 }
 
+/// Catalog id of the upscale model a job would use (explicit choice, or the profile's model).
+pub fn active_model_id(profile: Profile, model: Option<&str>, kind: MediaKind, models: &ModelSet) -> Option<String> {
+    if !uses_model(profile) {
+        return None;
+    }
+    if let Some(id) = model {
+        return Some(id.to_string());
+    }
+    ai_model_for(profile, kind, models).ok().flatten().map(|(name, _)| name)
+}
+
+/// The profile's own model when it isn't installed (catalog id), for an "Install" button.
+fn profile_model_id(profile: Profile, kind: MediaKind) -> Option<&'static str> {
+    match (profile, kind) {
+        (Profile::Realistic, _) => Some("realesrgan-x4plus"),
+        (Profile::Anime, MediaKind::Video) => Some("realesr-animevideov3"),
+        (Profile::Anime, MediaKind::Image) => Some("realesrgan-x4plus-anime"),
+        _ => None,
+    }
+}
+
+/// Catalog models the settings need that aren't installed (upscale model, cleanup model,
+/// face model + detector, frame generation model), so the UI can offer to install them.
+pub fn missing_models(s: &crate::config::JobSettings, kind: MediaKind, tools: &ToolSet, models: &ModelSet) -> Vec<String> {
+    let s = s.effective();
+    let cat = &models.catalog;
+    let missing = |id: &str| cat.model(id).is_some_and(|m| !models.catalog_files_present(m));
+    let mut out: Vec<String> = Vec::new();
+    let mut add = |id: &str| {
+        if missing(id) && !out.iter().any(|o| o == id) {
+            out.push(id.to_string());
+        }
+    };
+    if uses_model(s.profile) {
+        match s.model.as_deref() {
+            Some(id) => add(id),
+            None => {
+                if ai_model_for(s.profile, kind, models).is_err()
+                    && let Some(id) = profile_model_id(s.profile, kind)
+                {
+                    add(id);
+                }
+            }
+        }
+    }
+    if s.restore_on {
+        add(&s.restore_model);
+    }
+    if s.face_on {
+        add(&s.face_model);
+        add("yunet");
+    }
+    if kind == MediaKind::Video && s.framegen != crate::config::FrameGenMode::Off {
+        let installed = models.rife.iter().any(|m| m.name == s.rife_model);
+        if tools.rife.is_none() || !installed {
+            add(&s.rife_model);
+        }
+    }
+    out
+}
+
 /// Why a profile (with an optional explicit model) can't be used right now (UI tooltip),
 /// `None` if usable.
 pub fn profile_unavailable(
@@ -535,6 +596,63 @@ mod tests {
         let tools = ToolSet::from_bin_dir(&paths.bin);
         let u = backend_for_model("custom:4x_Remacri", &tools, &models).unwrap();
         assert_eq!(u.native_scales(), vec![4]);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn profile_model_selection_with_missing_models() {
+        use crate::config::{FrameGenMode, JobSettings};
+        let d = std::env::temp_dir().join(format!("qe-missing-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        let touch = |rel: &str| {
+            let p = d.join(rel);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(p, b"x").unwrap();
+        };
+        let paths = crate::paths::AppPaths::from_base(d.clone());
+        let load = || (ModelSet::discover(&paths.models), ToolSet::from_bin_dir(&paths.bin));
+        let (models, tools) = load();
+        let mut s = JobSettings { profile: Profile::Realistic, ..Default::default() };
+        // Nothing installed: the profile's own model is offered.
+        assert_eq!(missing_models(&s, MediaKind::Image, &tools, &models), ["realesrgan-x4plus"]);
+        assert_eq!(missing_models(&s, MediaKind::Video, &tools, &models), ["realesrgan-x4plus"]);
+        s.profile = Profile::Anime;
+        assert_eq!(missing_models(&s, MediaKind::Video, &tools, &models), ["realesr-animevideov3"]);
+        assert_eq!(missing_models(&s, MediaKind::Image, &tools, &models), ["realesrgan-x4plus-anime"]);
+        // No-AI profiles need nothing; an explicit model is checked instead of the profile's.
+        s.profile = Profile::NoAi;
+        assert!(missing_models(&s, MediaKind::Image, &tools, &models).is_empty());
+        s.profile = Profile::Realistic;
+        s.model = Some("span-nomosuni-2x".into());
+        assert_eq!(missing_models(&s, MediaKind::Image, &tools, &models), ["span-nomosuni-2x"]);
+        // Cleanup, faces (with the detector) and frame generation (video only).
+        s.restore_on = true;
+        s.face_on = true;
+        s.framegen_on = true;
+        s.framegen = FrameGenMode::X2;
+        let all = missing_models(&s, MediaKind::Video, &tools, &models);
+        assert_eq!(all, ["span-nomosuni-2x", "dejpg-1x", "gfpgan-1.4", "yunet", s.rife_model.as_str()]);
+        assert!(!missing_models(&s, MediaKind::Image, &tools, &models).contains(&s.rife_model));
+        // Upscaling off turns cleanup / faces off too.
+        let off = JobSettings { upscale_on: false, ..s.clone() };
+        assert_eq!(missing_models(&off, MediaKind::Image, &tools, &models), Vec::<String>::new());
+        // Installed models drop out of the list, and the active id follows the choice.
+        touch("models/onnx/span-nomosuni-2x.onnx");
+        touch("models/onnx/dejpg-realplksr-1x-fp16.onnx");
+        let (models, tools) = load();
+        let left = missing_models(&s, MediaKind::Image, &tools, &models);
+        assert_eq!(left, ["gfpgan-1.4", "yunet"]);
+        assert_eq!(
+            active_model_id(Profile::Realistic, Some("span-nomosuni-2x"), MediaKind::Image, &models).as_deref(),
+            Some("span-nomosuni-2x")
+        );
+        assert_eq!(active_model_id(Profile::PixelArt, Some("span-nomosuni-2x"), MediaKind::Image, &models), None);
+        // The profile's model is only reported once it is actually installed.
+        assert_eq!(active_model_id(Profile::Realistic, None, MediaKind::Image, &models), None);
+        touch("models/realesrgan/realesrgan-x4plus.param");
+        touch("models/realesrgan/realesrgan-x4plus.bin");
+        let (models, _) = load();
+        assert_eq!(active_model_id(Profile::Realistic, None, MediaKind::Image, &models).as_deref(), Some("realesrgan-x4plus"));
         let _ = std::fs::remove_dir_all(&d);
     }
 }

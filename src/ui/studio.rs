@@ -234,6 +234,11 @@ fn image_mode(app: &mut App, ui: &mut egui::Ui) {
         let p = plan_scale(info.width, info.height, s.scale, &b.backend.native_scales(), false);
         hint(ui, format!("{}x{} → {}x{} · {}", info.width, info.height, p.out_w, p.out_h, p.note));
     }
+    let missing = crate::engines::missing_models(s, MediaKind::Image, &env.tools, &env.models);
+    let p = crate::ui::models::missing_row(ui, &app.models_ui, &missing);
+    if !matches!(p, crate::ui::models::ComboPick::None) {
+        pick = p;
+    }
     crate::ui::models::handle_pick(app, pick);
 }
 

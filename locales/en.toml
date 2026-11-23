@@ -875,6 +875,7 @@ custom_none = "No custom models found."
 custom_scale_unknown = "scale unknown (put 2x/4x in the file name)"
 click_to_install = "Not installed: click to download it"
 get_more = "Get more models…"
+missing_for_job = "Not installed: {names}"
 
 [wizard]
 title = "Set up Quick Enhancer"

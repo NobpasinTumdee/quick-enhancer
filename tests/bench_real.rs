@@ -59,6 +59,8 @@ fn benchmark_and_auto_tune_this_pc() {
         out_w: 3840,
         out_h: 2160,
         out_fps: 60.0,
+        ai_factor: 0.8 / quick_enhancer::resources::X4PLUS_S_PER_MP,
+        ..Default::default()
     };
     let (tuned, changes) = resources::auto_tune(&sys, Some(&r), &m, &typical);
     eprintln!("auto-tune: {tuned:#?}");

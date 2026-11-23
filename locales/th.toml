@@ -875,6 +875,7 @@ custom_none = "ไม่พบโมเดลของคุณ"
 custom_scale_unknown = "ไม่ทราบสเกล (ใส่ 2x/4x ในชื่อไฟล์)"
 click_to_install = "ยังไม่ได้ติดตั้ง: คลิกเพื่อดาวน์โหลด"
 get_more = "หาโมเดลเพิ่ม…"
+missing_for_job = "ยังไม่ได้ติดตั้ง: {names}"
 
 [wizard]
 title = "ตั้งค่า Quick Enhancer"

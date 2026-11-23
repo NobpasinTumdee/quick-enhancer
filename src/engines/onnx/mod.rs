@@ -36,7 +36,8 @@ type CacheKey = (PathBuf, Option<u32>);
 
 /// Recently used sessions (loading a model takes 0.5–5 s; previews reuse them).
 static CACHE: Mutex<Vec<(CacheKey, Arc<LoadedSession>)>> = Mutex::new(Vec::new());
-const CACHE_MAX: usize = 3;
+/// Cleanup + upscaler + face detector + face model can all be active in one job.
+const CACHE_MAX: usize = 5;
 
 /// Drop cached sessions (frees VRAM, e.g. after a job or when the user switches models).
 pub fn clear_cache() {

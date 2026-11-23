@@ -786,6 +786,27 @@ pub fn upscale_model_combo(
 }
 
 /// Apply a [`ComboPick`] that needs the app (install dialog / page switch).
+/// Warning + "Install missing model" button for catalog models the settings need.
+pub fn missing_row(ui: &mut egui::Ui, mu: &ModelsUi, ids: &[String]) -> ComboPick {
+    let mut pick = ComboPick::None;
+    if ids.is_empty() {
+        return pick;
+    }
+    let names: Vec<String> = ids
+        .iter()
+        .map(|id| mu.catalog.model(id).map(|m| m.name.get().to_string()).unwrap_or_else(|| id.clone()))
+        .collect();
+    ui.horizontal_wrapped(|ui| {
+        ui.colored_label(WARN, format!("⚠ {}", t!("models.missing_for_job", names = names.join(", "))));
+        if mu.running() {
+            ui.spinner();
+        } else if ui.button(t!("models.install_missing")).clicked() {
+            pick = ComboPick::Install(ids[0].clone());
+        }
+    });
+    pick
+}
+
 pub fn handle_pick(app: &mut App, pick: ComboPick) {
     match pick {
         ComboPick::Install(id) => app.models_ui.request_install(&id, false),
