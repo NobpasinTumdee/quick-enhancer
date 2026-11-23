@@ -39,7 +39,7 @@ pub fn summary_line(app: &App) -> Option<String> {
     let s = app.config.job(app.cur_settings());
     let env = &app.env;
     let cpu = crate::devices::resolve(s.compute, &env.gpus).is_none();
-    let b = choose_backend(s.profile, info.kind, &env.tools, &env.models, cpu).ok()?;
+    let b = choose_backend(s.profile, s.model.as_deref(), info.kind, &env.tools, &env.models, cpu).ok()?;
     let video = info.kind == MediaKind::Video;
     let p = plan_scale(info.width, info.height, s.scale, &b.backend.native_scales(), video);
     let mut parts = Vec::new();
@@ -194,7 +194,7 @@ fn image_mode(app: &mut App, ui: &mut egui::Ui) {
             .width(200.0)
             .show_ui(ui, |ui| {
                 for p in IMAGE_PROFILES {
-                    let why = profile_unavailable(p, MediaKind::Image, &env.tools, &env.models);
+                    let why = profile_unavailable(p, s.model.as_deref(), MediaKind::Image, &env.tools, &env.models);
                     let r = ui.add_enabled_ui(why.is_none(), |ui| {
                         ui.selectable_value(&mut s.profile, p, image_profile_label(p))
                     });
@@ -204,15 +204,23 @@ fn image_mode(app: &mut App, ui: &mut egui::Ui) {
                 }
             });
     });
-    if let Some(why) = profile_unavailable(s.profile, MediaKind::Image, &env.tools, &env.models) {
+    let mut pick = crate::ui::models::ComboPick::None;
+    if crate::engines::uses_model(s.profile) {
+        ui.horizontal(|ui| {
+            ui.label(t!("settings.model"));
+            pick = crate::ui::models::upscale_model_combo(ui, "img-model", &app.models_ui, &env.models, &mut s.model);
+        });
+    }
+    if let Some(why) = profile_unavailable(s.profile, s.model.as_deref(), MediaKind::Image, &env.tools, &env.models) {
         ui.colored_label(WARN, format!("⚠ {why}"));
     }
     if let Some(info) = info
-        && let Ok(b) = choose_backend(s.profile, MediaKind::Image, &env.tools, &env.models, cpu)
+        && let Ok(b) = choose_backend(s.profile, s.model.as_deref(), MediaKind::Image, &env.tools, &env.models, cpu)
     {
         let p = plan_scale(info.width, info.height, s.scale, &b.backend.native_scales(), false);
         hint(ui, format!("{}x{} → {}x{} · {}", info.width, info.height, p.out_w, p.out_h, p.note));
     }
+    crate::ui::models::handle_pick(app, pick);
 }
 
 fn image_clarity(app: &mut App, ui: &mut egui::Ui) {

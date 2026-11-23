@@ -189,6 +189,7 @@ pub struct ToolSet {
     pub ffprobe: Option<PathBuf>,
     pub realesrgan: Option<PathBuf>,
     pub rife: Option<PathBuf>,
+    pub realcugan: Option<PathBuf>,
 }
 
 impl ToolSet {
@@ -198,6 +199,7 @@ impl ToolSet {
             ffprobe: find_tool(&paths.bin, "ffprobe", true),
             realesrgan: find_tool(&paths.bin, "realesrgan-ncnn-vulkan", false),
             rife: find_tool(&paths.bin, "rife-ncnn-vulkan", false),
+            realcugan: find_tool(&paths.bin, "realcugan-ncnn-vulkan", false),
         }
     }
 
@@ -208,6 +210,7 @@ impl ToolSet {
             ffprobe: find_tool(bin, "ffprobe", false),
             realesrgan: find_tool(bin, "realesrgan-ncnn-vulkan", false),
             rife: find_tool(bin, "rife-ncnn-vulkan", false),
+            realcugan: find_tool(bin, "realcugan-ncnn-vulkan", false),
         }
     }
 }
@@ -227,6 +230,12 @@ pub struct ModelSet {
     /// Real-ESRGAN model names (file stems) for which both `.param` and `.bin` exist.
     pub realesrgan: BTreeSet<String>,
     pub rife: Vec<RifeModel>,
+    /// Tools root (parent of `models/`): catalog file paths are relative to it.
+    pub base: PathBuf,
+    /// Model catalog (embedded or the newer cached copy).
+    pub catalog: std::sync::Arc<crate::models::Catalog>,
+    /// Models in `models/custom/`.
+    pub custom: Vec<crate::models::CustomModel>,
 }
 
 impl ModelSet {
@@ -260,11 +269,24 @@ impl ModelSet {
             }
         }
         rife.sort_by(|a, b| b.name.cmp(&a.name));
+        let base = models_dir.parent().map(Path::to_path_buf).unwrap_or_default();
         ModelSet {
             realesrgan_dir,
             realesrgan,
             rife,
+            catalog: std::sync::Arc::new(crate::models::Catalog::load(&base)),
+            custom: crate::models::custom::scan(&crate::models::custom::custom_dir(models_dir)),
+            base,
         }
+    }
+
+    /// Are all files of a catalog model present?
+    pub fn catalog_files_present(&self, m: &crate::models::ModelEntry) -> bool {
+        m.files.iter().all(|f| self.base.join(f).is_file())
+    }
+
+    pub fn custom_model(&self, id: &str) -> Option<&crate::models::CustomModel> {
+        self.custom.iter().find(|c| c.id == id)
     }
 
     pub fn has(&self, model: &str) -> bool {

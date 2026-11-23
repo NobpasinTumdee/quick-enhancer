@@ -834,7 +834,7 @@ mod estimate_tests {
 pub fn input_for(env: &crate::pipeline::job::Env, s: &JobSettings, info: &crate::media::probe::MediaInfo) -> Option<EstimateInput> {
     use crate::media::MediaKind;
     let cpu = crate::devices::resolve(s.compute, &env.gpus).is_none();
-    let b = crate::engines::choose_backend(s.profile, info.kind, &env.tools, &env.models, cpu).ok()?;
+    let b = crate::engines::choose_backend(s.profile, s.model.as_deref(), info.kind, &env.tools, &env.models, cpu).ok()?;
     let video = info.kind == MediaKind::Video;
     let p = crate::pipeline::plan::plan_scale(info.width, info.height, s.scale, &b.backend.native_scales(), video);
     let ai = b.backend.is_ai() && p.model_scale.is_some();

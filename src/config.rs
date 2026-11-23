@@ -313,6 +313,17 @@ pub struct JobSettings {
     pub denoise_on: bool,
     pub sharpen_on: bool,
     pub profile: Profile,
+    /// Upscale model: catalog id or `custom:<name>`. `None` = the profile's default model.
+    /// Only used by the AI profiles (not Pixel art / No AI).
+    pub model: Option<String>,
+    /// 1x restoration before upscaling (JPEG cleanup / denoise), catalog id.
+    pub restore_on: bool,
+    pub restore_model: String,
+    /// Face restoration after upscaling, catalog id; `face_strength` 0..1 blends with the
+    /// upscaled face (and is CodeFormer's fidelity weight).
+    pub face_on: bool,
+    pub face_model: String,
+    pub face_strength: f32,
     pub scale: ScaleMode,
     pub framegen: FrameGenMode,
     pub max_fps: u32,
@@ -351,6 +362,11 @@ impl JobSettings {
         if !s.upscale_on {
             s.profile = Profile::NoAi;
             s.scale = ScaleMode::X1;
+            s.restore_on = false;
+            s.face_on = false;
+        }
+        if matches!(s.profile, Profile::PixelArt | Profile::NoAi) {
+            s.model = None;
         }
         if !s.framegen_on {
             s.framegen = FrameGenMode::Off;
@@ -560,6 +576,12 @@ impl Default for JobSettings {
             framegen: FrameGenMode::Off,
             max_fps: 120,
             rife_model: "rife-v4.6".into(),
+            model: None,
+            restore_on: false,
+            restore_model: "dejpg-1x".into(),
+            face_on: false,
+            face_model: "gfpgan-1.4".into(),
+            face_strength: 0.7,
             scene_detect: true,
             scene_threshold: 0.30,
             denoise: 0.0,

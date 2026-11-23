@@ -109,6 +109,7 @@ pub fn enhancement(app: &mut App, ui: &mut egui::Ui) {
     let sel_info = app.selected_item().and_then(|i| i.info.clone());
     let cpu = crate::devices::resolve(app.config.machine.compute, &env.gpus).is_none();
     let s = app.config.settings_for_mut(app.studio);
+    let mut pick = crate::ui::models::ComboPick::None;
     egui::Grid::new("enh").num_columns(2).show(ui, |ui| {
         ui.label(t!("settings.profile"));
         egui::ComboBox::from_id_salt("profile")
@@ -116,7 +117,7 @@ pub fn enhancement(app: &mut App, ui: &mut egui::Ui) {
             .width(220.0)
             .show_ui(ui, |ui| {
                 for p in Profile::ALL {
-                    let why = profile_unavailable(p, kind, &env.tools, &env.models);
+                    let why = profile_unavailable(p, s.model.as_deref(), kind, &env.tools, &env.models);
                     let r = ui.add_enabled_ui(why.is_none(), |ui| {
                         ui.selectable_value(&mut s.profile, p, p.label())
                     });
@@ -126,6 +127,11 @@ pub fn enhancement(app: &mut App, ui: &mut egui::Ui) {
                 }
             });
         ui.end_row();
+        if crate::engines::uses_model(s.profile) {
+            ui.label(t!("settings.model"));
+            pick = crate::ui::models::upscale_model_combo(ui, "upmodel", &app.models_ui, &env.models, &mut s.model);
+            ui.end_row();
+        }
         ui.label(t!("settings.scale"));
         egui::ComboBox::from_id_salt("scale")
             .selected_text(s.scale.label())
@@ -145,12 +151,14 @@ pub fn enhancement(app: &mut App, ui: &mut egui::Ui) {
         Profile::General => t!("settings.model_general"),
         Profile::NoAi => t!("settings.model_none"),
     };
-    hint(ui, model_text);
-    if let Some(why) = profile_unavailable(s.profile, kind, &env.tools, &env.models) {
+    if s.model.is_none() || !crate::engines::uses_model(s.profile) {
+        hint(ui, model_text);
+    }
+    if let Some(why) = profile_unavailable(s.profile, s.model.as_deref(), kind, &env.tools, &env.models) {
         ui.colored_label(WARN, format!("⚠ {why}"));
     }
     if let Some(info) = sel_info.filter(|_| s.upscale_on)
-        && let Ok(b) = choose_backend(s.profile, info.kind, &env.tools, &env.models, cpu)
+        && let Ok(b) = choose_backend(s.profile, s.model.as_deref(), info.kind, &env.tools, &env.models, cpu)
     {
         {
             let p = plan_scale(
@@ -169,6 +177,7 @@ pub fn enhancement(app: &mut App, ui: &mut egui::Ui) {
             }
         }
     }
+    crate::ui::models::handle_pick(app, pick);
 }
 
 pub fn framegen(app: &mut App, ui: &mut egui::Ui) {
@@ -581,7 +590,7 @@ pub fn video(app: &mut App, ui: &mut egui::Ui) {
         let free = free_space(&root);
         if let Some(info) = info.filter(|i| i.kind == MediaKind::Video) {
             let cpu = crate::devices::resolve(st.compute, &env.gpus).is_none();
-            if let Ok(b) = choose_backend(st.profile, info.kind, &env.tools, &env.models, cpu) {
+            if let Ok(b) = choose_backend(st.profile, st.model.as_deref(), info.kind, &env.tools, &env.models, cpu) {
                 let p = plan_scale(info.width, info.height, st.scale, &b.backend.native_scales(), true);
                 let k = info.fps.map(|f| plan_fps(f, st.framegen, st.max_fps).multiplier).unwrap_or(1);
                 let ai = b.backend.is_ai() && p.model_scale.is_some();

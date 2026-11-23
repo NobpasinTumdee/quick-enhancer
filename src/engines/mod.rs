@@ -6,6 +6,7 @@
 
 pub mod filters;
 pub mod ort_stub;
+pub mod realcugan_ncnn;
 pub mod realesrgan_ncnn;
 pub mod resize;
 pub mod rife_ncnn;
@@ -166,13 +167,18 @@ fn ai_model_for(
     }
 }
 
-/// Why a profile can't be used right now (UI tooltip), `None` if usable.
+/// Why a profile (with an optional explicit model) can't be used right now (UI tooltip),
+/// `None` if usable.
 pub fn profile_unavailable(
     profile: Profile,
+    model: Option<&str>,
     kind: MediaKind,
     tools: &ToolSet,
     models: &ModelSet,
 ) -> Option<String> {
+    if let Some(id) = model.filter(|_| uses_model(profile)) {
+        return backend_for_model(id, tools, models).err();
+    }
     match ai_model_for(profile, kind, models) {
         Err(e) => Some(e),
         Ok(Some(_)) if tools.realesrgan.is_none() => {
@@ -182,14 +188,98 @@ pub fn profile_unavailable(
     }
 }
 
-/// Pick the upscale backend for a profile.
+/// Does the profile run an AI model (so an explicit model choice applies)?
+pub fn uses_model(profile: Profile) -> bool {
+    !matches!(profile, Profile::PixelArt | Profile::NoAi)
+}
+
+/// Upscaler for an explicit model id (catalog id or `custom:<name>`), or why it can't run.
+pub fn backend_for_model(
+    id: &str,
+    tools: &ToolSet,
+    models: &ModelSet,
+) -> Result<Arc<dyn Upscaler>, String> {
+    use crate::models::{Backend, CustomKind};
+    let realesrgan = || {
+        tools
+            .realesrgan
+            .clone()
+            .ok_or_else(|| crate::t!("engine.realesrgan_missing"))
+    };
+    if crate::models::custom::is_custom_id(id) {
+        let c = models
+            .custom_model(id)
+            .ok_or_else(|| crate::t!("engine.custom_missing", name = id))?;
+        return match c.kind {
+            CustomKind::Ncnn => {
+                let dir = c.path.parent().map(Path::to_path_buf).unwrap_or_default();
+                Ok(Arc::new(realesrgan_ncnn::RealEsrganNcnn::new(
+                    realesrgan()?,
+                    dir,
+                    c.name.clone(),
+                    vec![c.scale.unwrap_or(4)],
+                )))
+            }
+            CustomKind::Onnx => Err(crate::t!("engine.onnx_unavailable")),
+        };
+    }
+    let m = models
+        .catalog
+        .model(id)
+        .ok_or_else(|| crate::t!("engine.unknown_model", name = id))?;
+    if !models.catalog_files_present(m) {
+        return Err(crate::t!("engine.model_not_installed", name = m.name.get()));
+    }
+    let ncnn_name = m.ncnn_name.clone().unwrap_or_default();
+    match m.backend {
+        Backend::NcnnRealesrgan => {
+            let scales = if ncnn_name == "realesr-animevideov3" {
+                models.animevideo_scales()
+            } else {
+                m.scales.clone()
+            };
+            Ok(Arc::new(realesrgan_ncnn::RealEsrganNcnn::new(
+                realesrgan()?,
+                models.realesrgan_dir.clone(),
+                ncnn_name,
+                scales,
+            )))
+        }
+        Backend::NcnnRealcugan => {
+            let exe = tools
+                .realcugan
+                .clone()
+                .ok_or_else(|| crate::t!("engine.model_not_installed", name = m.name.get()))?;
+            let dir = models.base.join("models").join("realcugan").join(&ncnn_name);
+            Ok(Arc::new(realcugan_ncnn::RealCuganNcnn::new(exe, dir, m.scales.clone(), -1)))
+        }
+        Backend::Onnx => Err(crate::t!("engine.onnx_unavailable")),
+        Backend::NcnnRife => Err(crate::t!("engine.not_an_upscaler", name = m.name.get())),
+    }
+}
+
+/// Pick the upscale backend for a profile, or for an explicit `model` (AI profiles only).
 pub fn choose_backend(
     profile: Profile,
+    model: Option<&str>,
     kind: MediaKind,
     tools: &ToolSet,
     models: &ModelSet,
     cpu_only: bool,
 ) -> Result<BackendChoice, String> {
+    if let Some(id) = model.filter(|_| uses_model(profile)) {
+        let engine = backend_for_model(id, tools, models)?;
+        if cpu_only && !engine.supports_cpu() {
+            return Ok(BackendChoice {
+                backend: UpscaleBackend::Lanczos,
+                warning: Some(crate::t!("engine.no_cpu_mode")),
+            });
+        }
+        return Ok(BackendChoice {
+            backend: UpscaleBackend::Ai(engine),
+            warning: None,
+        });
+    }
     match profile {
         Profile::PixelArt => {
             return Ok(BackendChoice {
@@ -311,11 +401,52 @@ mod tests {
         let empty = ModelSet::default();
         let tools = ToolSet::default();
         assert!(
-            profile_unavailable(Profile::Realistic, MediaKind::Image, &tools, &empty).is_some()
+            profile_unavailable(Profile::Realistic, None, MediaKind::Image, &tools, &empty).is_some()
         );
-        assert!(profile_unavailable(Profile::PixelArt, MediaKind::Video, &tools, &empty).is_none());
-        let c = choose_backend(Profile::General, MediaKind::Video, &tools, &empty, false).unwrap();
+        assert!(profile_unavailable(Profile::PixelArt, None, MediaKind::Video, &tools, &empty).is_none());
+        let c = choose_backend(Profile::General, None, MediaKind::Video, &tools, &empty, false).unwrap();
         assert!(matches!(c.backend, UpscaleBackend::Lanczos));
         assert!(c.warning.is_some());
+    }
+
+    #[test]
+    fn explicit_models_resolve_or_explain() {
+        let d = std::env::temp_dir().join(format!("qe-eng-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        let touch = |rel: &str| {
+            let p = d.join(rel);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(p, b"x").unwrap();
+        };
+        let exe = |stem: &str| format!("bin/{stem}{}", std::env::consts::EXE_SUFFIX);
+        let paths = crate::paths::AppPaths::from_base(d.clone());
+        let models = ModelSet::discover(&paths.models);
+        let tools = ToolSet::from_bin_dir(&paths.bin);
+        // Not installed: a clear message, and the profile reports it too.
+        let e = backend_for_model("realcugan-se", &tools, &models).err().unwrap();
+        assert!(e.contains("Real-CUGAN"), "{e}");
+        assert!(profile_unavailable(Profile::Anime, Some("realcugan-se"), MediaKind::Video, &tools, &models).is_some());
+        // Pixel art ignores the model.
+        assert!(profile_unavailable(Profile::PixelArt, Some("realcugan-se"), MediaKind::Video, &tools, &models).is_none());
+        assert!(backend_for_model("nope", &tools, &models).is_err());
+        assert!(backend_for_model("custom:missing", &tools, &models).is_err());
+        // Installed Real-CUGAN: its engine, which can run on the CPU.
+        touch(&exe("realcugan-ncnn-vulkan"));
+        touch("bin/realcugan-ncnn-vulkan.exe");
+        touch("models/realcugan/models-se/up2x-conservative.param");
+        let models = ModelSet::discover(&paths.models);
+        let tools = ToolSet::from_bin_dir(&paths.bin);
+        let c = choose_backend(Profile::Anime, Some("realcugan-se"), MediaKind::Video, &tools, &models, true).unwrap();
+        assert!(c.backend.label().contains("Real-CUGAN"));
+        assert_eq!(c.backend.native_scales(), vec![2, 3, 4]);
+        // Custom ncnn model: Real-ESRGAN engine with the scale from the file name.
+        touch("models/custom/4x_Remacri.param");
+        touch("models/custom/4x_Remacri.bin");
+        touch(&exe("realesrgan-ncnn-vulkan"));
+        let models = ModelSet::discover(&paths.models);
+        let tools = ToolSet::from_bin_dir(&paths.bin);
+        let u = backend_for_model("custom:4x_Remacri", &tools, &models).unwrap();
+        assert_eq!(u.native_scales(), vec![4]);
+        let _ = std::fs::remove_dir_all(&d);
     }
 }

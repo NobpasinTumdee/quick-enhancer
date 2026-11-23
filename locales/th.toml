@@ -267,6 +267,9 @@ open_licenses = "เปิดโฟลเดอร์สัญญาอนุญ
 app_moved = "ภาษา การอัปเดต เครื่องมือ และข้อมูลโปรแกรม อยู่ที่หน้า \"ตั้งค่า\""
 suffix = "ต่อท้ายชื่อไฟล์"
 suffix_tip = "เติมต่อท้ายชื่อไฟล์ต้นฉบับ เช่น photo → photo_enhanced.png"
+model = "โมเดล"
+model_auto = "อัตโนมัติ (ตามโปรไฟล์)"
+model_custom = "{name} (ของฉัน)"
 
 [framegen]
 target = "FPS เป้าหมาย"
@@ -320,6 +323,11 @@ missing_model = "ไม่พบโมเดล {name}.param/.bin — ติด�
 no_general_model = "ไม่ได้ติดตั้งโมเดลทั่วไป — ใช้ Lanczos3 แทน"
 realesrgan_missing = "ไม่พบ realesrgan-ncnn-vulkan — ติดตั้งใน “จัดการเครื่องมือ” (หรือวางไว้ใน bin/)"
 no_cpu_mode = "realesrgan-ncnn-vulkan ไม่มีโหมด CPU — เมื่อเลือก CPU จะใช้ Lanczos3 แทน AI"
+custom_missing = "ไม่พบโมเดล {name} ในโฟลเดอร์โมเดลของฉัน"
+onnx_unavailable = "ยังไม่ได้ติดตั้ง ONNX runtime ติดตั้งได้ที่หน้าโมเดล AI"
+unknown_model = "ไม่รู้จักโมเดล {name}"
+model_not_installed = "ยังไม่ได้ติดตั้ง {name} ติดตั้งได้ที่หน้าโมเดล AI"
+not_an_upscaler = "{name} ไม่ใช่โมเดลขยายภาพ"
 
 [encoder]
 detecting = "กำลังตรวจ…"

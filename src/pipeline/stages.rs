@@ -62,7 +62,7 @@ impl StagePlan {
         } else if cpu_only && s.compute == ComputeDevice::Auto && !env.gpus.is_empty() {
             warnings.push(crate::t!("warn.no_gpu"));
         }
-        let choice = choose_backend(s.profile, info.kind, &env.tools, &env.models, cpu_only)
+        let choice = choose_backend(s.profile, s.model.as_deref(), info.kind, &env.tools, &env.models, cpu_only)
             .map_err(PipelineError::Setup)?;
         if let Some(w) = choice.warning {
             warnings.push(w);

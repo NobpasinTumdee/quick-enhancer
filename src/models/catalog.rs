@@ -214,6 +214,12 @@ pub struct Catalog {
     pub models: Vec<ModelEntry>,
 }
 
+impl Default for Catalog {
+    fn default() -> Self {
+        Catalog::embedded()
+    }
+}
+
 /// Package ids of the ONNX runtimes.
 pub const RUNTIME_DML: &[&str] = &["ort-dml"];
 pub const RUNTIME_CUDA: &[&str] = &["ort-cuda", "cuda-runtime", "cuda-cublas", "cuda-nvrtc", "cuda-cudnn"];

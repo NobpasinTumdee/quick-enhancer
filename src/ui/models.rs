@@ -724,18 +724,18 @@ pub fn model_combo(
         .show_ui(ui, |ui| {
             let (ready, missing): (Vec<&&ModelEntry>, Vec<&&ModelEntry>) =
                 entries.iter().partition(|m| mu.ready(m));
-            for m in ready {
-                if ui.selectable_label(*selected == m.id, m.name.get()).clicked() {
-                    *selected = m.id.clone();
-                    pick = ComboPick::Selected;
-                }
-            }
             for (id, label) in extra {
                 if entries.iter().any(|m| &m.id == id) {
                     continue;
                 }
                 if ui.selectable_label(selected == id, label).clicked() {
                     *selected = id.clone();
+                    pick = ComboPick::Selected;
+                }
+            }
+            for m in ready {
+                if ui.selectable_label(*selected == m.id, m.name.get()).clicked() {
+                    *selected = m.id.clone();
                     pick = ComboPick::Selected;
                 }
             }
@@ -758,6 +758,30 @@ pub fn model_combo(
                 pick = ComboPick::OpenPage;
             }
         });
+    pick
+}
+
+/// Upscale model dropdown: "Automatic (profile default)", custom models, then the catalog.
+/// `selected` is `None` for automatic.
+pub fn upscale_model_combo(
+    ui: &mut egui::Ui,
+    id_salt: &str,
+    mu: &ModelsUi,
+    models: &crate::paths::ModelSet,
+    selected: &mut Option<String>,
+) -> ComboPick {
+    let mut extra = vec![(String::new(), t!("settings.model_auto"))];
+    extra.extend(
+        models
+            .custom
+            .iter()
+            .map(|c| (c.id.clone(), t!("settings.model_custom", name = &c.name))),
+    );
+    let mut cur = selected.clone().unwrap_or_default();
+    let pick = model_combo(ui, id_salt, mu, Group::Upscale, &extra, &mut cur);
+    if matches!(pick, ComboPick::Selected) {
+        *selected = (!cur.is_empty()).then_some(cur);
+    }
     pick
 }
 

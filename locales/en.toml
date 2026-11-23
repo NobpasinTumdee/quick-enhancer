@@ -267,6 +267,9 @@ open_licenses = "Open licenses folder"
 app_moved = "Language, updates, tools and About are on the Settings page."
 suffix = "File name suffix"
 suffix_tip = "Added to the source name, e.g. photo → photo_enhanced.png"
+model = "Model"
+model_auto = "Automatic (profile default)"
+model_custom = "{name} (custom)"
 
 [framegen]
 target = "Target FPS"
@@ -320,6 +323,11 @@ missing_model = "Missing model {name}.param/.bin — install Real-ESRGAN in Mana
 no_general_model = "No general model installed — falling back to Lanczos3"
 realesrgan_missing = "realesrgan-ncnn-vulkan is missing — install it in Manage tools (or place it in bin/)"
 no_cpu_mode = "realesrgan-ncnn-vulkan has no CPU mode — the CPU device uses Lanczos3 instead of AI"
+custom_missing = "Custom model {name} was not found in the custom models folder"
+onnx_unavailable = "The ONNX runtime is not installed. Install it on the AI models page."
+unknown_model = "Unknown model {name}"
+model_not_installed = "{name} is not installed. Install it on the AI models page."
+not_an_upscaler = "{name} is not an upscaling model"
 
 [encoder]
 detecting = "detecting…"
