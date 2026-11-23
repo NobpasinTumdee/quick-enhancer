@@ -67,6 +67,19 @@ ONNX Runtime 1.32.0 with CUDA (NVIDIA cards only, optional)
             Agreement (CUDA Toolkit EULA). cuDNN: NVIDIA cuDNN Software License
             Agreement. Downloaded from PyPI, not hosted by this project.
 
+Microsoft Visual C++ runtime 14.52.37029 (x64): vcruntime140.dll,
+vcruntime140_1.dll, msvcp140.dll — installed next to onnxruntime.dll with
+either runtime (app-local deployment)
+  Source:   unchanged, Microsoft-signed files from the official Visual C++
+            Redistributable installer, https://aka.ms/vc14/vc_redist.x64.exe;
+            hosted on this project's models release
+            (vcruntime-14.52.37029-x64.zip, with VCRUNTIME-NOTICE.txt)
+  License:  Microsoft Visual C++ Redistributable license terms,
+            https://aka.ms/VCRedistLicense. Redistributed as "Distributable
+            Code" under the Visual Studio license terms,
+            https://learn.microsoft.com/visualstudio/releases/2022/redistribution.
+            Copyright (c) Microsoft Corporation.
+
 AI models (downloaded on request from the AI models page)
 ---------------------------------------------------------
 

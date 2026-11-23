@@ -27,7 +27,8 @@ attach a `latest.json` next to the installer. `scripts\release.ps1` produces bot
    release*) and run the real model tests (`cargo test --test models_real -- --ignored`).
 5. [ ] If UI text changed: both `locales/en.toml` and `locales/th.toml` are updated (the tests
    check this).
-6. [ ] Run the release script (clippy + tests + build + installer + checksum + manifest):
+6. [ ] Run the release script (clippy + tests + build + MinGW DLL check + installer +
+   `portable.txt` check + checksum + manifest):
 
    ```powershell
    powershell -ExecutionPolicy Bypass -File scripts\release.ps1 `

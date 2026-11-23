@@ -108,8 +108,16 @@ if (-not $Iscc) {
     ) | Where-Object { Test-Path $_ } | Select-Object -First 1
 }
 if (-not $Iscc) { throw "ISCC.exe (Inno Setup 6) not found; pass -Iscc <path>" }
-& $Iscc /Q "/DAppVersion=$version" "$root\installer\QuickEnhancer.iss"
-if ($LASTEXITCODE -ne 0) { throw "ISCC failed" }
+# Not /Q: ISCC prints a "Compressing: <file>" line for every file it packs, which is checked below.
+$isccOut = & $Iscc "/DAppVersion=$version" "$root\installer\QuickEnhancer.iss"
+if ($LASTEXITCODE -ne 0) { $isccOut | Select-Object -Last 20 | Write-Host; throw "ISCC failed" }
+$packed = @($isccOut | Where-Object { $_ -match '^\s*Compressing:\s+(.+?)\s*(\(.*\))?\s*$' } | ForEach-Object { $Matches[1].Trim() })
+if ($packed.Count -eq 0) { throw "could not read the packed file list from the ISCC output" }
+Write-Host ("  packed: " + (($packed | ForEach-Object { Split-Path $_ -Leaf }) -join ", "))
+# portable.txt next to the installed exe would switch the installed app to portable mode
+# (data written into the program folder instead of %LOCALAPPDATA%).
+$bad = @($packed | Where-Object { (Split-Path $_ -Leaf) -ieq "portable.txt" })
+if ($bad.Count -gt 0) { throw "the installer would contain portable.txt: $($bad -join ', ')" }
 $setupName = "QuickEnhancer-Setup-$version.exe"
 $setup = "$root\dist\$setupName"
 if (-not (Test-Path $setup)) { throw "$setup not produced" }

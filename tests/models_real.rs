@@ -151,7 +151,7 @@ fn onnx_models_on_gpu_match_cpu_and_run_video_in_memory() {
     }
     let base = root().join("target").join("it-scratch").join("onnx-home");
     let paths = AppPaths::from_base(base.clone());
-    install(&paths, &["ort-dml", "onnx-span-nomosuni", "onnx-realplksr-nomos2", "onnx-dejpg"]);
+    install(&paths, &["ort-dml", "vcrt-dml", "onnx-span-nomosuni", "onnx-realplksr-nomos2", "onnx-dejpg"]);
     quick_enhancer::engines::onnx::runtime::configure(&base, RuntimeKind::DirectMl, &gpus);
     let env = Env {
         models: ModelSet::discover(&paths.models),
@@ -221,6 +221,10 @@ fn onnx_models_on_gpu_match_cpu_and_run_video_in_memory() {
         .expect("video job");
     assert_eq!((r.out_w, r.out_h), (512, 288));
     assert_eq!(r.frames, 24);
+    // onnxruntime.dll binds to the app-local VC++ runtime installed next to it.
+    let vc = quick_enhancer::engines::onnx::runtime::vc_runtime_in_use().expect("msvcp140 loaded");
+    eprintln!("C++ runtime in use: {vc}");
+    assert!(vc.to_ascii_lowercase().contains(r"runtime\dml"), "{vc}");
     let notices = quick_enhancer::engines::onnx::runtime::take_notices();
     eprintln!("notices: {notices:?}");
 
@@ -358,7 +362,7 @@ fn face_detection_and_restoration_match_the_reference() {
     }
     let base = root().join("target").join("it-scratch").join("onnx-home");
     let paths = AppPaths::from_base(base.clone());
-    install(&paths, &["ort-dml", "onnx-yunet", "onnx-gfpgan", "onnx-codeformer"]);
+    install(&paths, &["ort-dml", "vcrt-dml", "onnx-yunet", "onnx-gfpgan", "onnx-codeformer"]);
     quick_enhancer::engines::onnx::runtime::configure(&base, RuntimeKind::DirectMl, &gpus);
     let env = Env {
         models: ModelSet::discover(&paths.models),

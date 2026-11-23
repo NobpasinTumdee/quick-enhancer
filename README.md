@@ -298,8 +298,10 @@ cleanup and transformer models, face restoration against reference images and al
   GPU); HAT-L is slow even on a GPU and marked experimental.
 * **Face restoration** works frame by frame, so faces can flicker slightly in videos; very small
   faces (under ~24 px) are left alone.
-* The ONNX runtime needs the **Microsoft Visual C++ 2015–2022 redistributable** (present on most
-  PCs); if it is missing, the error message links to it.
+* The ONNX runtime comes with its own copy of the Microsoft Visual C++ runtime (installed next to
+  `onnxruntime.dll`), so the VC++ Redistributable is not needed. If an older system copy is
+  already loaded by something else, Windows uses that one; if loading fails, the message suggests
+  **Repair** or the official VC++ Redistributable.
 * Switching between the DirectML and CUDA runtimes needs an app restart.
 * **SeedVR2** (diffusion video restoration) was evaluated for 2.2 and left out: even 17 frames at
   512×288 needed over 10 GB of VRAM and about 3.4 s per frame.

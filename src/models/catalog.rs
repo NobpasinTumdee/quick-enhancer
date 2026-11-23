@@ -216,8 +216,8 @@ impl Default for Catalog {
 }
 
 /// Package ids of the ONNX runtimes.
-pub const RUNTIME_DML: &[&str] = &["ort-dml"];
-pub const RUNTIME_CUDA: &[&str] = &["ort-cuda", "cuda-runtime", "cuda-cublas", "cuda-nvrtc", "cuda-cudnn"];
+pub const RUNTIME_DML: &[&str] = &["ort-dml", "vcrt-dml"];
+pub const RUNTIME_CUDA: &[&str] = &["ort-cuda", "vcrt-cuda", "cuda-runtime", "cuda-cublas", "cuda-nvrtc", "cuda-cudnn"];
 
 impl Catalog {
     /// Parse and validate. `tools` provides the package ids that live in `tools.json`.

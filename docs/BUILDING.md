@@ -64,8 +64,9 @@ objdump -p target/release/QuickEnhancer.exe | grep "DLL Name"
 The ONNX Runtime (`onnxruntime.dll`, DirectML or CUDA) is **not** linked at build time: the `ort`
 crate uses `load-dynamic`, and the app loads the DLL that the Model Manager downloaded into
 `runtime/dml/` or `runtime/cuda/`. Building needs no ONNX Runtime files. At run time the DLL needs
-the Microsoft Visual C++ 2015–2022 redistributable (x64), which most PCs already have; the load
-error message links to it.
+the Microsoft Visual C++ runtime; the runtime packages install an app-local copy
+(`vcruntime140.dll`, `vcruntime140_1.dll`, `msvcp140.dll` from the official `vc_redist.x64.exe`,
+package `vcrt-dml` / `vcrt-cuda`) next to `onnxruntime.dll`, and the app preloads it.
 
 ## Running during development
 

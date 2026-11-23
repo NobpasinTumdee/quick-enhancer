@@ -37,6 +37,9 @@ update check).
   and includes cleanup and faces; ONNX stages need no temp PNGs in the disk estimate.
 - The installer's tool step is now the setup wizard. Existing users get the usual "update the
   changed tools" list (RIFE has a new pinned version) instead of the wizard.
+- The ONNX runtimes include an app-local copy of the Microsoft Visual C++ runtime (14.52), so
+  PCs without the VC++ Redistributable can run ONNX models.
+- `scripts/release.ps1` fails if the installer would contain `portable.txt`.
 - `scripts/release.ps1` fails if `QuickEnhancer.exe` imports a MinGW runtime DLL; GNU builds link
   libgcc / winpthread statically.
 

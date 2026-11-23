@@ -367,8 +367,11 @@ Feasibility study and approved choices: `docs/FEASIBILITY_v2.2.md`. One commit p
   an app, so we download it from PyPI instead of hosting it) or CUDA (onnxruntime-gpu + NVIDIA
   CUDA / cuBLAS / NVRTC / cuDNN wheels, NVIDIA only). Only one `onnxruntime.dll` per process:
   the preferred runtime if installed, else the other; a switch takes effect after a restart.
-  `SetDllDirectoryW` + preloading make the runtime's own DLLs win over System32 copies. Load
-  errors mention the VC++ redistributable.
+  `SetDllDirectoryW` + preloading make the runtime's own DLLs win over System32 copies. The
+  Visual C++ runtime is deployed app-local (`vcrt-dml` / `vcrt-cuda`: the three DLLs from the
+  official vc_redist, hosted on the models release) and preloaded first, so a PC without the
+  VC++ Redistributable works; the log records which `msvcp140.dll` is in use. Load errors
+  suggest Repair or the official redistributable.
 * **Execution providers:** DirectML on the DXGI adapter whose LUID matches the chosen Vulkan GPU
   (or CUDA on that NVIDIA card's CUDA index) → CPU, with a toast when falling back. DirectML
   sessions use no memory pattern and sequential execution. Up to 5 sessions stay cached

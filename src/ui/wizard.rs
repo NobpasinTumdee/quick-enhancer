@@ -304,7 +304,7 @@ mod tests {
         let opts = options();
         let pick = |keys: &'static [&'static str]| move |k: &str| keys.contains(&k);
         let ids = selected_packages(&opts, &pick(&["photo"]), false);
-        assert_eq!(ids, ["ffmpeg", "ort-dml", "onnx-realplksr-nomos2", "onnx-span-nomosuni"]);
+        assert_eq!(ids, ["ffmpeg", "ort-dml", "vcrt-dml", "onnx-realplksr-nomos2", "onnx-span-nomosuni"]);
         // Already have a runtime → not added again.
         let ids = selected_packages(&opts, &pick(&["photo"]), true);
         assert!(!ids.contains(&"ort-dml"));

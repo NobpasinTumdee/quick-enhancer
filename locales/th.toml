@@ -916,7 +916,7 @@ offline = "ไฟล์ออฟไลน์…"
 [onnx]
 runtime_other = "ใช้ ONNX runtime แบบ {kind} (ยังไม่ได้ติดตั้งแบบที่เลือกไว้)"
 load_failed = "โหลด ONNX runtime ไม่ได้: {error}"
-vcredist_hint = "เครื่องอาจยังไม่มี Microsoft Visual C++ 2015-2022 Redistributable (x64) ติดตั้งได้จาก https://aka.ms/vs/17/release/vc_redist.x64.exe หรือลองติดตั้ง runtime ใหม่ในหน้าโมเดล AI"
+vcredist_hint = "ไฟล์ Visual C++ runtime อาจหายหรือเสียหาย ลองกดซ่อม (Repair) runtime ในหน้าโมเดล AI หรือติดตั้ง Microsoft Visual C++ Redistributable (x64) จาก https://aka.ms/vc14/vc_redist.x64.exe"
 cuda_not_nvidia = "runtime CUDA ใช้ได้กับการ์ดจอ NVIDIA เท่านั้น {gpu} จึงรันโมเดล ONNX ด้วย CPU แทน เปลี่ยนเป็น DirectML ได้ที่หน้าโมเดล AI"
 ep_fallback = "{from} รันโมเดลนี้ไม่ได้ จึงใช้ {to} แทน (ช้ากว่า) สาเหตุ: {error}"
 session_failed = "โหลดโมเดล {name} ไม่ได้: {error} ลองกด ซ่อม ในหน้าโมเดล AI"

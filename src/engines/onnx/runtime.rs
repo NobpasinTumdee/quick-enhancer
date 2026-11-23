@@ -161,11 +161,14 @@ fn prepare_dll_search(dir: &Path, kind: RuntimeKind) {
             tracing::warn!("SetDllDirectoryW: {e}");
         }
         let _ = AddDllDirectory(&h);
+        // The app-local Visual C++ runtime first, so onnxruntime.dll binds to it even on PCs
+        // without the VC++ Redistributable.
+        let vc: &[&str] = &["vcruntime140.dll", "vcruntime140_1.dll", "msvcp140.dll"];
         let preload: &[&str] = match kind {
             RuntimeKind::DirectMl => &["DirectML.dll"],
             RuntimeKind::Cuda => &["cudart64_13.dll", "cublasLt64_13.dll", "cublas64_13.dll", "cudnn64_9.dll"],
         };
-        for name in preload {
+        for name in vc.iter().chain(preload) {
             let p = dir.join(name);
             if p.is_file()
                 && let Err(e) = LoadLibraryW(&HSTRING::from(p.as_os_str()))
@@ -173,10 +176,23 @@ fn prepare_dll_search(dir: &Path, kind: RuntimeKind) {
                 tracing::warn!("preloading {}: {e}", p.display());
             }
         }
+        tracing::info!("C++ runtime in use: {}", vc_runtime_in_use().unwrap_or_else(|| "none".into()));
     }
     #[cfg(not(windows))]
     {
         let _ = (dir, kind);
+    }
+}
+
+/// Full path of the `msvcp140.dll` loaded in this process (ours or the system's), if any.
+#[cfg(windows)]
+pub fn vc_runtime_in_use() -> Option<String> {
+    use windows::Win32::System::LibraryLoader::{GetModuleFileNameW, GetModuleHandleW};
+    unsafe {
+        let m = GetModuleHandleW(windows::core::w!("msvcp140.dll")).ok()?;
+        let mut buf = [0u16; 1024];
+        let n = GetModuleFileNameW(Some(m), &mut buf) as usize;
+        (n > 0).then(|| String::from_utf16_lossy(&buf[..n]))
     }
 }
 

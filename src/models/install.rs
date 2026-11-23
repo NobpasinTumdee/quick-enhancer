@@ -327,11 +327,12 @@ mod tests {
         // Plan: DirectML runtime + YuNet helper, but not the already-installed model.
         let plan = install_plan(&cat, &tools, &snap, &gfp, RuntimeKind::DirectMl, false);
         let ids: Vec<&str> = plan.iter().map(|p| p.id.as_str()).collect();
-        assert_eq!(ids, ["ort-dml", "onnx-yunet"]);
+        assert_eq!(ids, ["ort-dml", "vcrt-dml", "onnx-yunet"]);
         // Repair re-fetches the model's own package.
         let plan = install_plan(&cat, &tools, &snap, &gfp, RuntimeKind::DirectMl, true);
         assert!(plan.iter().any(|p| p.id == "onnx-gfpgan"));
         install_files(&paths.base, cat.package("ort-dml").unwrap());
+        install_files(&paths.base, cat.package("vcrt-dml").unwrap());
         for f in &cat.model("yunet").unwrap().files {
             touch(&paths.base, f);
         }

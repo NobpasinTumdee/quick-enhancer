@@ -30,7 +30,24 @@ def wheel(id, name, version, path, sha, size, license, homepage, files):
 
 
 NV = "NVIDIA Software License Agreement (CUDA Toolkit EULA)"
+VCRT = ("vcruntime-14.52.37029-x64.zip", "791ff9bb5b98acc8168bcb3168ebdbc4b4eabfe3d10a79d3e5648b5f159bda79", 325201)
+
+
+def vcrt(id, sub):
+    """App-local Visual C++ runtime next to onnxruntime.dll (official vc_redist files, unchanged)."""
+    return dict(id=id, name="Microsoft Visual C++ runtime (app-local)", version="14.52.37029", required=False,
+                platform="windows-x64", url=REL + VCRT[0], sha256=VCRT[1], size=VCRT[2], archive="zip",
+                license="Microsoft Visual C++ Redistributable (Distributable Code)",
+                homepage="https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist",
+                files=[rule("vcruntime140.dll", f"runtime/{sub}/vcruntime140.dll"),
+                       rule("vcruntime140_1.dll", f"runtime/{sub}/vcruntime140_1.dll"),
+                       rule("msvcp140.dll", f"runtime/{sub}/msvcp140.dll"),
+                       rule("VCRUNTIME-NOTICE.txt", "licenses/vcruntime/NOTICE.txt")])
+
+
 packages = [
+    vcrt("vcrt-dml", "dml"),
+    vcrt("vcrt-cuda", "cuda"),
     # --- ONNX Runtime: one runtime per process (DirectML for any DX12 GPU, or CUDA for NVIDIA) ---
     wheel("ort-dml", "ONNX Runtime 1.24.4 + DirectML", "1.24.4",
           "88/ea/33814eb0ec96775eda4c1d30b0d86e91d7d2cd0d84c66d3915aef0e06fa3/onnxruntime_directml-1.24.4-cp312-cp312-win_amd64.whl",
@@ -273,6 +290,6 @@ for name, desc, speed, quality, vmin, s in [
                        [f"models/rife/{name}/flownet.param", f"models/rife/{name}/flownet.bin"], ["video"]))
 
 with open(sys.argv[1], "w", encoding="utf-8", newline="\n") as fh:
-    json.dump(dict(schema=1, catalog_version="2026.11.2", update_url=REL + "models.json",
+    json.dump(dict(schema=1, catalog_version="2026.11.3", update_url=REL + "models.json",
                    packages=packages, models=models), fh, ensure_ascii=False, indent=1)
     fh.write("\n")

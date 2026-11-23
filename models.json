@@ -1,8 +1,70 @@
 {
  "schema": 1,
- "catalog_version": "2026.11.2",
+ "catalog_version": "2026.11.3",
  "update_url": "https://github.com/NobpasinTumdee/quick-enhancer/releases/download/models-2026.11/models.json",
  "packages": [
+  {
+   "id": "vcrt-dml",
+   "name": "Microsoft Visual C++ runtime (app-local)",
+   "version": "14.52.37029",
+   "required": false,
+   "platform": "windows-x64",
+   "url": "https://github.com/NobpasinTumdee/quick-enhancer/releases/download/models-2026.11/vcruntime-14.52.37029-x64.zip",
+   "sha256": "791ff9bb5b98acc8168bcb3168ebdbc4b4eabfe3d10a79d3e5648b5f159bda79",
+   "size": 325201,
+   "archive": "zip",
+   "license": "Microsoft Visual C++ Redistributable (Distributable Code)",
+   "homepage": "https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist",
+   "files": [
+    {
+     "from": "vcruntime140.dll",
+     "to": "runtime/dml/vcruntime140.dll"
+    },
+    {
+     "from": "vcruntime140_1.dll",
+     "to": "runtime/dml/vcruntime140_1.dll"
+    },
+    {
+     "from": "msvcp140.dll",
+     "to": "runtime/dml/msvcp140.dll"
+    },
+    {
+     "from": "VCRUNTIME-NOTICE.txt",
+     "to": "licenses/vcruntime/NOTICE.txt"
+    }
+   ]
+  },
+  {
+   "id": "vcrt-cuda",
+   "name": "Microsoft Visual C++ runtime (app-local)",
+   "version": "14.52.37029",
+   "required": false,
+   "platform": "windows-x64",
+   "url": "https://github.com/NobpasinTumdee/quick-enhancer/releases/download/models-2026.11/vcruntime-14.52.37029-x64.zip",
+   "sha256": "791ff9bb5b98acc8168bcb3168ebdbc4b4eabfe3d10a79d3e5648b5f159bda79",
+   "size": 325201,
+   "archive": "zip",
+   "license": "Microsoft Visual C++ Redistributable (Distributable Code)",
+   "homepage": "https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist",
+   "files": [
+    {
+     "from": "vcruntime140.dll",
+     "to": "runtime/cuda/vcruntime140.dll"
+    },
+    {
+     "from": "vcruntime140_1.dll",
+     "to": "runtime/cuda/vcruntime140_1.dll"
+    },
+    {
+     "from": "msvcp140.dll",
+     "to": "runtime/cuda/msvcp140.dll"
+    },
+    {
+     "from": "VCRUNTIME-NOTICE.txt",
+     "to": "licenses/vcruntime/NOTICE.txt"
+    }
+   ]
+  },
   {
    "id": "ort-dml",
    "name": "ONNX Runtime 1.24.4 + DirectML",

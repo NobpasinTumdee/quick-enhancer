@@ -916,7 +916,7 @@ offline = "Offline archives…"
 [onnx]
 runtime_other = "Using the {kind} ONNX runtime (the preferred one is not installed)."
 load_failed = "Could not load the ONNX runtime: {error}"
-vcredist_hint = "The Microsoft Visual C++ 2015-2022 Redistributable (x64) may be missing: install it from https://aka.ms/vs/17/release/vc_redist.x64.exe, or reinstall the runtime on the AI models page."
+vcredist_hint = "A Visual C++ runtime file may be missing or damaged: use Repair for the runtime on the AI models page, or install the Microsoft Visual C++ Redistributable (x64) from https://aka.ms/vc14/vc_redist.x64.exe."
 cuda_not_nvidia = "The CUDA runtime only works on NVIDIA GPUs; {gpu} runs ONNX models on the CPU. Choose DirectML on the AI models page."
 ep_fallback = "{from} could not run this model, so {to} is used instead (slower). Reason: {error}"
 session_failed = "Could not load the model {name}: {error}. Try Repair on the AI models page."
