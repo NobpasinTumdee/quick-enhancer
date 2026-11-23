@@ -357,7 +357,12 @@ fn runtime_section(app: &mut App, ui: &mut egui::Ui) {
             });
         }
         if changed {
-            app.toast(t!("models.runtime_restart"));
+            crate::engines::onnx::runtime::configure(&app.paths.base, app.config.onnx_runtime, &app.env.gpus);
+            // Only one ONNX Runtime can be loaded per process: a switch after the first ONNX
+            // job takes effect on the next start.
+            if crate::engines::onnx::runtime::loaded_kind().is_some_and(|k| k != app.config.onnx_runtime) {
+                app.toast(t!("models.runtime_restart"));
+            }
         }
     });
 }

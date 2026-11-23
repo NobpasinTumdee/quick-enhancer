@@ -633,7 +633,10 @@ pub struct Config {
     pub update_check_asked: bool,
     /// Outputs page view options.
     pub outputs: OutputsView,
-    /// The first-run setup wizard was completed or skipped.
+    /// The first-run setup wizard was completed or skipped. A config file written by an older
+    /// version (no such key) belongs to an existing user: they get the classic "update the
+    /// changed tools" list instead of the first-run wizard.
+    #[serde(default = "existing_user")]
     pub wizard_done: bool,
     /// ONNX Runtime used for ONNX models (one per process; switching needs a restart).
     pub onnx_runtime: crate::models::RuntimeKind,
@@ -674,6 +677,10 @@ impl Default for OutputsView {
             filter: OutputsFilter::All,
         }
     }
+}
+
+fn existing_user() -> bool {
+    true
 }
 
 impl Default for Config {
@@ -769,6 +776,19 @@ impl Config {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn wizard_shows_for_new_users_only() {
+        assert!(!Config::default().wizard_done);
+        // A 2.1 config (no wizard_done key) is an existing user.
+        let old = toml::to_string(&Config::default()).unwrap().replace("wizard_done = false
+", "");
+        assert!(!old.contains("wizard_done"));
+        assert!(Config::parse(&old).unwrap().wizard_done);
+        // Saved after the wizard: stays as written.
+        let new = toml::to_string(&Config::default()).unwrap();
+        assert!(!Config::parse(&new).unwrap().wizard_done);
+    }
+
     use super::*;
 
     #[test]

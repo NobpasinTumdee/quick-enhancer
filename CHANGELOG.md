@@ -4,6 +4,46 @@ All notable changes to Quick Enhancer. Versions follow [Semantic Versioning](htt
 the version in `Cargo.toml` is the single source of truth (exe resources, installer, About page,
 update check).
 
+## [2.2.0] — 2026-11-24
+
+### Added
+- **AI models page** (Model Manager): every model by task with download size, speed / quality,
+  whether it fits your GPU, licence and credits; Install, Uninstall and Repair per model; files
+  shared with other models are kept. The model list (`models.json`) is embedded and can be
+  refreshed from the project's models release without an app update.
+- **First-run setup wizard**: pick what you want to do (upscale photos / anime, clean up old
+  photos, restore faces, smooth motion) and the needed tools and models are downloaded, with the
+  total size shown. Model lists in the settings show models that aren't installed greyed out with
+  ⬇ and their size; picking one asks to install it, and settings that need a missing model show
+  **Install missing model**.
+- **ONNX backend**: ONNX models run inside the app with ONNX Runtime on **DirectML** (any
+  DirectX 12 GPU) or **CUDA** (NVIDIA, optional), downloaded on demand. Tiled with feathered
+  seams, frames stay in memory (no temp PNGs), automatic fallback to the CPU with a notice, and
+  smaller tiles when video memory runs out.
+- **New upscale models:** RealPLKSR Nomos2 4x, SPAN NomosUni 2x (fast), DAT2 Nomos2 4x (best
+  detail), HAT-L BHI 4x (experimental), ESRGAN Nomos2 4x (ncnn), **Real-CUGAN** SE / Pro for
+  anime (2x/3x/4x with denoise levels). Each AI profile has a **Model** choice (*Automatic* keeps
+  the 2.1 behaviour).
+- **AI cleanup** at the original size before upscaling: DeJPG, DeNoise, SCUNet.
+- **Face restoration**: GFPGAN 1.4 and CodeFormer (non-commercial, confirmed once before
+  install) with a strength slider; faces are found with YuNet, aligned, restored and blended back.
+- **Custom models**: ESRGAN-family ncnn (`.param` + `.bin`) and image-to-image `.onnx` files in
+  `models/custom/`.
+- Frame generation uses **RIFE v4.26** by default (TNTwise build, also v4.25-lite, v4.6, v4).
+- `tools/convert/`: developer-only conversion scripts with the recipe for each published file.
+
+### Changed
+- The time estimate uses each model's speed from the catalog (scaled by this PC's benchmark),
+  and includes cleanup and faces; ONNX stages need no temp PNGs in the disk estimate.
+- The installer's tool step is now the setup wizard. Existing users get the usual "update the
+  changed tools" list (RIFE has a new pinned version) instead of the wizard.
+- `scripts/release.ps1` fails if `QuickEnhancer.exe` imports a MinGW runtime DLL; GNU builds link
+  libgcc / winpthread statically.
+
+### Removed
+- SeedVR2 (diffusion video restoration) was evaluated and left out: 17 frames at 512×288 needed
+  over 10 GB of VRAM and about 3.4 s per frame. GIMM-VFI was dropped in favour of RIFE 4.26.
+
 ## [2.1.0] — 2026-11-22
 
 ### Added

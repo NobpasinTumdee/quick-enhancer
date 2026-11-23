@@ -1,7 +1,8 @@
 # Quick Enhancer — Plan & Design Decisions
 
 Native Rust desktop app (eframe/egui + wgpu) for local image & video enhancement:
-AI upscaling (Real-ESRGAN ncnn), frame interpolation (RIFE ncnn), CAS / unsharp / denoise
+AI upscaling (Real-ESRGAN / Real-CUGAN ncnn, ONNX models in-process), AI cleanup and face
+restoration (ONNX), frame interpolation (RIFE ncnn), CAS / unsharp / denoise
 filters, explicit compute device + encoder selection, live resource monitor, bounded
 chunked video pipeline and an interactive before/after preview.
 
@@ -56,16 +57,26 @@ src/
                      (shared denoise→upscale→resize→sharpen code used by preview AND export),
                      scene.rs (cut detector + slot filling), temp.rs (temp dirs, disk checks),
                      cancel.rs
-  engines/           mod.rs (Upscaler / Interpolator traits), realesrgan_ncnn.rs, rife_ncnn.rs,
-                     ort_stub.rs, filters.rs (CAS, unsharp, bilateral denoise), resize.rs
+  engines/           mod.rs (Upscaler / Interpolator traits, backend choice), realesrgan_ncnn.rs,
+                     realcugan_ncnn.rs, rife_ncnn.rs, filters.rs (CAS, unsharp, bilateral
+                     denoise), resize.rs
+    onnx/            mod.rs (sessions, OnnxUpscaler), runtime.rs (DLL loading, EP chain),
+                     tiler.rs (tiles, reflect padding, feather blend), face.rs (YuNet,
+                     alignment, GFPGAN / CodeFormer, paste-back)
+  models/            catalog.rs (models.json), install.rs (state, plans, uninstall),
+                     custom.rs (models/custom scan), fit.rs (GPU fit, time estimate)
+  ui/models.rs, ui/wizard.rs   AI models page + model pickers, first-run wizard
   media/             probe.rs (ffprobe JSON), ffmpeg.rs (decode/encode pipes, mux args),
                      encoders.rs (detection + test encode + per-encoder quality args)
   monitor/           mod.rs (unified provider + history), nvml.rs, pdh.rs (cfg(windows))
   devices/           mod.rs (Vulkan enumeration via ash, Auto selection)
 tests/pipeline_filters.rs   integration test (skips if bin/ffmpeg missing)
 tests/tools_archives.rs     #[ignore] real-archive / HTTPS install tests
+tests/models_real.rs        #[ignore] real model downloads + runs (ncnn, ONNX, faces, RIFE)
 installer/QuickEnhancer.iss Inno Setup 6 script;  scripts/release.ps1 release builder
 tools.json                  pinned tool downloads (embedded);  locales/*.toml UI strings
+models.json                 model catalog (embedded; refreshed from the models release)
+tools/catalog/              gen_models_json.py (writes models.json);  tools/convert/ conversion
 bin/      ffmpeg, ffprobe, realesrgan-ncnn-vulkan, rife-ncnn-vulkan (+ their DLLs) — not committed
 models/   realesrgan/*.param|bin, rife/<model-dir>/            — not committed
 ```
@@ -85,7 +96,9 @@ models/   realesrgan/*.param|bin, rife/<model-dir>/            — not committed
 | rfd | native file/folder pickers |
 | sysinfo (system, disk features only) | CPU / RAM / free disk / live-PID check |
 | nvml-wrapper | NVIDIA GPU stats; loads `nvml.dll` dynamically, absent ⇒ graceful fallback |
-| windows (cfg(windows)) | PDH GPU counters, `SetPriorityClass` |
+| windows (cfg(windows)) | PDH GPU counters, `SetPriorityClass`, DXGI adapter LUIDs, DLL search path |
+| ort (`load-dynamic`, `directml`, `cuda`) | ONNX Runtime API; `onnxruntime.dll` is loaded at run time from the Model Manager's runtime folder, so the exe has no ORT dependency |
+| half | fp16 tensors for fp16 ONNX models |
 | ash (`loaded`) | Vulkan GPU enumeration; loads `vulkan-1.dll` at runtime so the app starts without Vulkan |
 | rodio | preview audio output (cpal/WASAPI); audio decoded by ffmpeg to f32 PCM |
 | ureq (rustls) + sha2 | blocking HTTPS for tool downloads / update check, streaming SHA-256 |
@@ -94,7 +107,7 @@ models/   realesrgan/*.param|bin, rife/<model-dir>/            — not committed
 | winresource (build) | exe icon + version resource from Cargo.toml |
 
 Heaviest pieces are eframe/wgpu (required) and `windows` (only 3 feature modules enabled).
-No tokio, no FFmpeg bindings, no ONNX runtime.
+No tokio, no FFmpeg bindings; ONNX Runtime only as a downloaded DLL.
 
 ## Key decisions
 
@@ -153,8 +166,8 @@ No tokio, no FFmpeg bindings, no ONNX runtime.
   (AI runs on RGB only).
 * **WebP output** is lossless (the `image` crate has no lossy WebP encoder); quality slider applies
   to JPEG.
-* **ort backend**: `OrtUpscaler` implements `Upscaler` and reports "not implemented" — the trait
-  boundary is where a DirectML/CUDA backend plugs in.
+* **ONNX backend** (v2.2): `OnnxUpscaler` implements `Upscaler` with `in_memory() == true`, so
+  the pipeline skips the PNG round trip for it. See *v2.2 decisions*.
 * **Stale temp**: temp dirs are `<temp>/quick-enhancer-tmp/<pid>-<n>` (1.x: `enhancer-tmp`); at
   startup any dir whose PID is not alive is removed.
 
@@ -331,3 +344,65 @@ One commit per feature on the `v2.1` branch.
   coalesces drags and typing into one step; a clip removed from the join list can't be undone.
 * Selection playback in the editor decodes at most 20 s at ≤ 960x540 into memory and reuses
   `SamplePlayer` in a new single-view mode (audio is the clock, as in the sample preview).
+
+## v2.2 decisions (Quick Enhancer 2.2: more models, ONNX backend, Model Manager)
+
+Feasibility study and approved choices: `docs/FEASIBILITY_v2.2.md`. One commit per feature on
+`feature/v2.2-models`.
+
+* **Catalog:** `models.json` (schema 1) lists *packages* (downloads: url, sha256, size, archive
+  `zip` or `file`, files → destinations, licence) and *models* (group, backend, scales, speed /
+  quality 1–5, VRAM min / recommended, cost s/MP on the reference PC, licence with commercial /
+  redistribute flags, `onnx` spec: file, tile, static, precision, range). It is embedded and
+  refreshed from the `models-YYYY.MM` release; a cached copy is used only when its
+  `catalog_version` is newer. Generated by `tools/catalog/gen_models_json.py`; packages share the
+  `tools.json` installer (verify SHA-256, safe extraction, atomic rename) and the tools.json
+  components (FFmpeg, Real-ESRGAN, RIFE) appear as packages too.
+* **Install state** is derived from the files on disk (`InstallSnapshot`), not from a database:
+  Installed / NotInstalled / Partial / Outdated. An install plan is runtime → helper models →
+  the model's own packages, skipping what is present (Repair re-fetches the model's own
+  packages). Uninstall keeps packages and files other usable models still need, and never
+  removes tools.json components or runtimes (those have their own buttons).
+* **Runtimes:** DirectML (`onnxruntime-directml` wheel, DirectML.dll redistributable only inside
+  an app, so we download it from PyPI instead of hosting it) or CUDA (onnxruntime-gpu + NVIDIA
+  CUDA / cuBLAS / NVRTC / cuDNN wheels, NVIDIA only). Only one `onnxruntime.dll` per process:
+  the preferred runtime if installed, else the other; a switch takes effect after a restart.
+  `SetDllDirectoryW` + preloading make the runtime's own DLLs win over System32 copies. Load
+  errors mention the VC++ redistributable.
+* **Execution providers:** DirectML on the DXGI adapter whose LUID matches the chosen Vulkan GPU
+  (or CUDA on that NVIDIA card's CUDA index) → CPU, with a toast when falling back. DirectML
+  sessions use no memory pattern and sequential execution. Up to 5 sessions stay cached
+  (cleanup + upscaler + detector + face model of one job, plus a preview).
+* **Tiling:** static exports run exactly `tile × tile` (reflect-padded inside the tile region),
+  dynamic ones a multiple of 8; overlap tile/16 (8–32 px), linear feather across overlaps;
+  output rows are blended into a band buffer and flushed once no later tile touches them.
+  Out-of-memory (DirectML `887A0005/6`, `E_OUTOFMEMORY`, CUDA OOM) halves the tile of dynamic
+  models down to 64 with a notice; static models stop with an explanation.
+* **Pipeline order:** AI cleanup (1x ONNX) → denoise → (RIFE) → upscale → faces → resize →
+  sharpen. ONNX stages run on in-memory frames; ncnn stages keep the chunked PNG pipeline. With
+  frame generation, ONNX upscaling runs after the frames are read back from the RIFE folder.
+* **Faces:** YuNet 2023mar (static 640, letterboxed, BGR 0..255), score ≥ 0.6, NMS 0.3, at most 32
+  faces, faces < 24 px skipped; least-squares similarity to the FFHQ 512 five-point template;
+  bilinear warp; restore; inverse warp with a 24 px border mask blurred with σ 12. GFPGAN is
+  blended by *strength*; CodeFormer gets `weight = 1 − strength`. Faces run after the upscale,
+  on the upscaled frame. Our own GFPGAN export works on DirectML after `fix_double.py`, so
+  FaceFusion's files were not needed.
+* **Frame generation:** the TNTwise rife-ncnn-vulkan build (RIFE v4.26 default, v4.25-lite, v4.6,
+  v4), repacked slim on our models release. A configured model that is missing falls back to
+  v4.26 → v4.6 → v4.25-lite → v4. GIMM-VFI was dropped in the feasibility study.
+* **SeedVR2 dropped:** the one allowed reference run of the upstream `pipeline.py` (int8, CUDA,
+  RTX 5060 Ti 16 GB, 16 GB RAM) took 58 s for 17 frames at 512×288 with +10.5 GB VRAM and
+  +6.3 GB RAM. Memory grows with the frame area (windowed DiT attention, VAE decoder), so useful
+  sizes can't fit 16 GB, and a Rust port would run the same graphs.
+* **Licences:** each model's licence, credits and commercial flag come from the catalog; models
+  with `commercial: false` (CodeFormer) need a one-time "I will not use it commercially"
+  confirmation (stored in `config.accepted_licenses`). Only files whose licence allows
+  redistribution are hosted on our release; the rest download from their original source.
+* **Estimator:** time = this PC's x4plus benchmark × the model's catalog cost relative to x4plus
+  (6 s/MP), plus cleanup and ~0.05 s per face; VRAM from the catalog for ONNX sessions;
+  no upscaled PNG temp for in-memory ONNX stages.
+* **Custom models:** `models/custom/*.param+bin` (ESRGAN-family, run by realesrgan-ncnn-vulkan)
+  and `*.onnx` (RGB 0..1 in / out; scale from the name or a 32×32 probe run).
+* **Build:** GNU toolchain (WinLibs) kept; `ort` is `load-dynamic`, so no import library is
+  needed; libgcc / winpthread are linked statically and `scripts/release.ps1` fails if the exe
+  imports a MinGW DLL.

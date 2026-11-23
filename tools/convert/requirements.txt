@@ -1,0 +1,11 @@
+# Developer-only model conversion (Python 3.12). End users never need Python.
+torch==2.15.0
+spandrel==0.4.2
+spandrel_extra_arches==0.2.0
+onnx==1.23.2
+onnxconverter-common==1.16.0
+onnxslim==0.1.99
+onnxruntime-directml==1.24.4
+pnnx==20261020
+numpy==2.5.5
+safetensors==0.8.0

@@ -23,6 +23,8 @@ attach a `latest.json` next to the installer. `scripts\release.ps1` produces bot
 2. [ ] Bump `version` in `Cargo.toml` (semver `MAJOR.MINOR.PATCH`). This is the only place.
 3. [ ] Add a `## [x.y.z] — YYYY-MM-DD` section to `CHANGELOG.md`.
 4. [ ] If a tool changed: update `tools.json` (see below) and run the archive test.
+   If the model catalog changed: publish the models release / `models.json` first (see *Models
+   release*) and run the real model tests (`cargo test --test models_real -- --ignored`).
 5. [ ] If UI text changed: both `locales/en.toml` and `locales/th.toml` are updated (the tests
    check this).
 6. [ ] Run the release script (clippy + tests + build + installer + checksum + manifest):
@@ -175,8 +177,10 @@ the catalog test fails if a non-redistributable model points at our release). Mo
 non-commercial license (CodeFormer) may be hosted only with their license text and are labelled
 "Non-commercial" in the app.
 
-1. Convert / export the models with the scripts in `tools/convert/` and check them in the app
-   (custom models folder) on DirectML and CPU.
+1. Convert / export the models with the scripts in `tools/convert/` (the
+   [README](../tools/convert/README.md) has the recipe for every published file), check each with
+   `compare.py` against the PyTorch weights, and try it in the app (drop it into
+   `models/custom/`) on DirectML and on the CPU.
 2. Update the table in `tools/catalog/gen_models_json.py` (file name, SHA-256, size, license),
    bump `catalog_version`, and regenerate the catalog:
 
