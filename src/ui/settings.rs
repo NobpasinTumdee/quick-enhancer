@@ -140,6 +140,14 @@ pub fn enhancement(app: &mut App, ui: &mut egui::Ui) {
             }
         });
         ui.end_row();
+        ui.label(t!("settings.faces"));
+        ui.horizontal_wrapped(|ui| {
+            let p = face_picker(ui, "facemodel", &app.models_ui, s);
+            if !matches!(p, crate::ui::models::ComboPick::None) {
+                pick = p;
+            }
+        });
+        ui.end_row();
         ui.label(t!("settings.scale"));
         egui::ComboBox::from_id_salt("scale")
             .selected_text(s.scale.label())
@@ -205,6 +213,26 @@ pub fn restore_picker(
             .map(|c| (c.id.clone(), format!("{} ({})", c.name, t!("settings.model_custom"))))
             .collect();
         crate::ui::models::model_combo(ui, id_salt, mu, crate::models::Group::Restore, &extra, &mut s.restore_model)
+    })
+    .inner
+}
+
+/// "Face restoration" checkbox, face model picker and strength slider.
+pub fn face_picker(
+    ui: &mut egui::Ui,
+    id_salt: &str,
+    mu: &crate::ui::models::ModelsUi,
+    s: &mut crate::config::JobSettings,
+) -> crate::ui::models::ComboPick {
+    ui.checkbox(&mut s.face_on, "").on_hover_text(t!("settings.faces_hint"));
+    ui.add_enabled_ui(s.face_on, |ui| {
+        let p = crate::ui::models::model_combo(ui, id_salt, mu, crate::models::Group::Face, &[], &mut s.face_model);
+        ui.add(
+            egui::Slider::new(&mut s.face_strength, 0.0..=1.0)
+                .text(t!("settings.face_strength"))
+                .fixed_decimals(2),
+        );
+        p
     })
     .inner
 }

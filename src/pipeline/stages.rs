@@ -36,6 +36,8 @@ pub struct StagePlan {
     pub backend: UpscaleBackend,
     /// 1x AI restoration (JPEG artefacts / noise) at source resolution, before upscaling.
     pub restore: Option<Arc<dyn crate::engines::Upscaler>>,
+    /// Face restoration after the upscale.
+    pub faces: Option<Arc<crate::engines::onnx::face::FaceRestorer>>,
     pub denoise: f32,
     pub sharpen: SharpenParams,
     /// Local contrast strength (0 = off), applied after sharpening.
@@ -79,6 +81,19 @@ impl StagePlan {
         } else {
             None
         };
+        let faces = if s.face_on {
+            let f = crate::engines::face_backend(&s.face_model, s.face_strength, &env.models)
+                .map_err(PipelineError::Setup)?;
+            if cpu_only {
+                warnings.push(crate::t!("warn.face_cpu"));
+            }
+            if info.kind == MediaKind::Video {
+                warnings.push(crate::t!("warn.face_video"));
+            }
+            Some(Arc::new(f))
+        } else {
+            None
+        };
         let even = info.kind == MediaKind::Video;
         let scale = plan_scale(
             info.width,
@@ -103,6 +118,7 @@ impl StagePlan {
             scale,
             backend: choice.backend,
             restore,
+            faces,
             denoise: s.denoise,
             sharpen: SharpenParams {
                 mode: s.sharpen,
@@ -130,9 +146,27 @@ impl StagePlan {
         self.backend.is_ai() && self.scale.model_scale.is_some() && !self.backend.in_memory()
     }
 
-    /// AI stage runs on in-memory frames (ONNX).
+    /// AI stage runs on in-memory frames (ONNX), or faces are restored.
     pub fn ai_in_memory(&self) -> bool {
-        self.backend.in_memory() && self.scale.model_scale.is_some()
+        (self.backend.in_memory() && self.scale.model_scale.is_some()) || self.faces.is_some()
+    }
+
+    /// Face restoration on an (upscaled) frame; no-op when off.
+    pub fn faces_mem(&self, img: RgbImage, cancel: &CancelToken) -> Result<RgbImage, PipelineError> {
+        let Some(f) = &self.faces else { return Ok(img) };
+        f.restore(img, &self.engine_ctx(cancel)).map_err(|e| {
+            if e.is_cancelled() {
+                PipelineError::Cancelled
+            } else {
+                PipelineError::Engine(e)
+            }
+        })
+    }
+
+    /// In-memory AI after decoding / disk upscaling: ONNX upscale, then faces.
+    pub fn ai_mem(&self, img: RgbImage, cancel: &CancelToken) -> Result<RgbImage, PipelineError> {
+        let img = self.upscale_mem(img, cancel)?;
+        self.faces_mem(img, cancel)
     }
 
     /// In-memory AI upscale of one frame (no-op without an in-memory AI stage).
@@ -302,6 +336,7 @@ impl StagePlan {
         } else {
             self.upscale_mem(img, cancel)?
         };
+        let img = self.faces_mem(img, cancel)?;
         if cancel.is_cancelled() {
             return Err(PipelineError::Cancelled);
         }
@@ -322,6 +357,9 @@ impl StagePlan {
         }
         if let Some(r) = &self.restore {
             parts.insert(0, format!("{} →", r.name()));
+        }
+        if let Some(f) = &self.faces {
+            parts.push(format!("+ {}", f.name));
         }
         parts.join(" · ")
     }

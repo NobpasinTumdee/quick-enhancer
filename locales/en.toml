@@ -272,6 +272,9 @@ model_auto = "Automatic (profile default)"
 model_custom = "{name} (custom)"
 restore = "AI cleanup"
 restore_hint = "Removes JPEG/compression artefacts or noise with a 1x AI model before upscaling."
+faces = "Face restoration"
+faces_hint = "Finds faces and restores them with a face model, pasted back into the upscaled image."
+face_strength = "Strength"
 
 [framegen]
 target = "Target FPS"
@@ -331,6 +334,7 @@ unknown_model = "Unknown model {name}"
 model_not_installed = "{name} is not installed. Install it on the AI models page."
 not_an_upscaler = "{name} is not an upscaling model"
 not_a_restorer = "{name} is not a 1x cleanup model."
+not_a_face_model = "{name} is not a face restoration model."
 
 [encoder]
 detecting = "detecting…"
@@ -341,6 +345,8 @@ test_failed = "test encode failed: {reason}"
 cpu_slow = "CPU selected: AI models are very slow (or unavailable) on CPU"
 no_gpu = "No suitable GPU found — running on CPU"
 restore_cpu = "AI cleanup runs on the CPU and will be slow."
+face_cpu = "Face restoration runs on the CPU and will be slow."
+face_video = "Face restoration works frame by frame and may flicker slightly in videos."
 
 [note]
 vfr_converted = "VFR source converted to CFR {fps} FPS"

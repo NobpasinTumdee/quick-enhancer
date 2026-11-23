@@ -272,6 +272,9 @@ model_auto = "อัตโนมัติ (ตามโปรไฟล์)"
 model_custom = "{name} (ของฉัน)"
 restore = "AI ล้างภาพ"
 restore_hint = "ลบรอยบีบอัด JPEG หรือ noise ด้วยโมเดล AI แบบ 1x ก่อนขยายภาพ"
+faces = "ฟื้นฟูใบหน้า"
+faces_hint = "หาใบหน้าแล้วฟื้นฟูด้วยโมเดลใบหน้า จากนั้นวางกลับลงในภาพที่ขยายแล้ว"
+face_strength = "ความแรง"
 
 [framegen]
 target = "FPS เป้าหมาย"
@@ -331,6 +334,7 @@ unknown_model = "ไม่รู้จักโมเดล {name}"
 model_not_installed = "ยังไม่ได้ติดตั้ง {name} ติดตั้งได้ที่หน้าโมเดล AI"
 not_an_upscaler = "{name} ไม่ใช่โมเดลขยายภาพ"
 not_a_restorer = "{name} ไม่ใช่โมเดลล้างภาพแบบ 1x"
+not_a_face_model = "{name} ไม่ใช่โมเดลฟื้นฟูใบหน้า"
 
 [encoder]
 detecting = "กำลังตรวจ…"
@@ -341,6 +345,8 @@ test_failed = "ทดสอบเข้ารหัสไม่ผ่าน: {re
 cpu_slow = "เลือก CPU อยู่: โมเดล AI จะช้ามาก (หรือใช้ไม่ได้) บน CPU"
 no_gpu = "ไม่พบ GPU ที่เหมาะสม — ประมวลผลด้วย CPU"
 restore_cpu = "AI ล้างภาพจะรันด้วย CPU ซึ่งช้า"
+face_cpu = "การฟื้นฟูใบหน้าจะรันด้วย CPU ซึ่งช้า"
+face_video = "การฟื้นฟูใบหน้าทำทีละเฟรม ในวิดีโออาจกระพริบเล็กน้อย"
 
 [note]
 vfr_converted = "แปลงไฟล์ VFR เป็น CFR {fps} FPS แล้ว"

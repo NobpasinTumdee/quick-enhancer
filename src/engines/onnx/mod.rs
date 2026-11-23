@@ -1,6 +1,7 @@
 //! ONNX backend: image-to-image models (super-resolution, 1x restoration) run in-process with
 //! ONNX Runtime (DirectML / CUDA / CPU), tiled with feather blending, frames kept in memory.
 
+pub mod face;
 pub mod runtime;
 pub mod tiler;
 
@@ -26,7 +27,9 @@ pub struct LoadedSession {
     pub half: bool,
     /// Fixed input size from the graph (`Some((w, h))` for static exports).
     pub fixed: Option<(u32, u32)>,
-    pub extra_inputs: Vec<String>,
+    /// Scalar side inputs (name, shape), e.g. CodeFormer's fidelity weight.
+    pub extra_inputs: Vec<(String, Vec<i64>)>,
+    pub outputs: Vec<String>,
 }
 
 type CacheKey = (PathBuf, Option<u32>);
@@ -72,7 +75,9 @@ fn build(env: &runtime::Loaded, path: &Path, ep: Ep, threads: usize) -> Result<S
     b.commit_from_file(path).map_err(|x| e(&x))
 }
 
-fn describe(s: &Session) -> (String, String, bool, Option<(u32, u32)>, Vec<String>) {
+type Described = (String, String, bool, Option<(u32, u32)>, Vec<(String, Vec<i64>)>, Vec<String>);
+
+fn describe(s: &Session) -> Described {
     let inp = &s.inputs()[0];
     let (half, fixed) = match inp.dtype() {
         ValueType::Tensor { ty, shape, .. } => {
@@ -82,8 +87,20 @@ fn describe(s: &Session) -> (String, String, bool, Option<(u32, u32)>, Vec<Strin
         }
         _ => (false, None),
     };
-    let extra = s.inputs().iter().skip(1).map(|o| o.name().to_string()).collect();
-    (inp.name().to_string(), s.outputs()[0].name().to_string(), half, fixed, extra)
+    let extra = s
+        .inputs()
+        .iter()
+        .skip(1)
+        .map(|o| {
+            let dims = match o.dtype() {
+                ValueType::Tensor { shape, .. } => shape.iter().copied().collect(),
+                _ => Vec::new(),
+            };
+            (o.name().to_string(), dims)
+        })
+        .collect();
+    let outputs: Vec<String> = s.outputs().iter().map(|o| o.name().to_string()).collect();
+    (inp.name().to_string(), outputs[0].clone(), half, fixed, extra, outputs)
 }
 
 /// Load (or reuse) a session for `path` on `gpu` (Vulkan index), falling back along the EP chain.
@@ -116,7 +133,7 @@ pub fn session_for(path: &Path, gpu: Option<u32>, threads: usize) -> Result<Arc<
                         error = short(&last)
                     ));
                 }
-                let (input, output, half, fixed, extra_inputs) = describe(&s);
+                let (input, output, half, fixed, extra_inputs, outputs) = describe(&s);
                 let ls = Arc::new(LoadedSession {
                     session: Mutex::new(s),
                     ep: *ep,
@@ -125,6 +142,7 @@ pub fn session_for(path: &Path, gpu: Option<u32>, threads: usize) -> Result<Arc<
                     half,
                     fixed,
                     extra_inputs,
+                    outputs,
                 });
                 if let Ok(mut c) = CACHE.lock() {
                     c.retain(|(k, _)| *k != key);
@@ -142,7 +160,7 @@ pub fn session_for(path: &Path, gpu: Option<u32>, threads: usize) -> Result<Arc<
     Err(crate::t!("onnx.session_failed", name = path.display(), error = short(&last)))
 }
 
-fn short(s: &str) -> String {
+pub(crate) fn short(s: &str) -> String {
     let s = s.lines().next().unwrap_or(s);
     if s.chars().count() > 240 {
         format!("{}…", s.chars().take(240).collect::<String>())
@@ -152,8 +170,27 @@ fn short(s: &str) -> String {
 }
 
 impl LoadedSession {
-    /// Run one NCHW tile (`extra` = scalar inputs such as CodeFormer's fidelity weight).
+    /// Run one NCHW tile (`extra` = scalar inputs such as CodeFormer's fidelity weight) and
+    /// return the main output.
     pub fn run(&self, data: Vec<f32>, w: u32, h: u32, extra: &[(&str, f32)]) -> Result<Vec<f32>, String> {
+        let names = [self.output.clone()];
+        Ok(self.run_outputs(data, w, h, extra, &names)?.remove(0).1)
+    }
+
+    /// Run and return every output (e.g. the face detector's per-stride heads).
+    pub fn run_all(&self, data: Vec<f32>, w: u32, h: u32) -> Result<Vec<(String, Vec<f32>)>, String> {
+        let names = self.outputs.clone();
+        self.run_outputs(data, w, h, &[], &names)
+    }
+
+    fn run_outputs(
+        &self,
+        data: Vec<f32>,
+        w: u32,
+        h: u32,
+        extra: &[(&str, f32)],
+        names: &[String],
+    ) -> Result<Vec<(String, Vec<f32>)>, String> {
         let shape = [1usize, 3, h as usize, w as usize];
         let mut s = self.session.lock().map_err(|e| e.to_string())?;
         let e = |x: ort::Error| x.to_string();
@@ -164,22 +201,30 @@ impl LoadedSession {
         } else {
             inputs.push((self.input.clone(), Tensor::from_array((shape, data)).map_err(e)?.into_dyn()));
         }
-        for name in &self.extra_inputs {
+        for (name, dims) in &self.extra_inputs {
             let v = extra.iter().find(|(n, _)| n == name).map(|(_, v)| *v).unwrap_or(0.5);
+            let shape: Vec<usize> = dims.iter().map(|&d| d.max(1) as usize).collect();
             let t = if self.half {
-                Tensor::from_array(((), vec![f16::from_f32(v)])).map_err(e)?.into_dyn()
+                Tensor::from_array((shape, vec![f16::from_f32(v)])).map_err(e)?.into_dyn()
             } else {
-                Tensor::from_array(((), vec![v])).map_err(e)?.into_dyn()
+                Tensor::from_array((shape, vec![v])).map_err(e)?.into_dyn()
             };
             inputs.push((name.clone(), t));
         }
         let out = s.run(inputs).map_err(e)?;
-        let o = &out[self.output.as_str()];
-        if let Ok((_, v)) = o.try_extract_tensor::<f32>() {
-            return Ok(v.to_vec());
+        let mut res = Vec::with_capacity(names.len());
+        for n in names {
+            let o = &out[n.as_str()];
+            let v = match o.try_extract_tensor::<f32>() {
+                Ok((_, v)) => v.to_vec(),
+                Err(_) => {
+                    let (_, v) = o.try_extract_tensor::<f16>().map_err(e)?;
+                    v.iter().map(|x| x.to_f32()).collect()
+                }
+            };
+            res.push((n.clone(), v));
         }
-        let (_, v) = o.try_extract_tensor::<f16>().map_err(e)?;
-        Ok(v.iter().map(|x| x.to_f32()).collect())
+        Ok(res)
     }
 }
 

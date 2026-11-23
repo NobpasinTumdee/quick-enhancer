@@ -210,6 +210,36 @@ pub fn uses_model(profile: Profile) -> bool {
     !matches!(profile, Profile::PixelArt | Profile::NoAi)
 }
 
+/// Face restoration stage for a catalog face model (with the YuNet detector).
+pub fn face_backend(id: &str, strength: f32, models: &ModelSet) -> Result<onnx::face::FaceRestorer, String> {
+    let m = models
+        .catalog
+        .model(id)
+        .ok_or_else(|| crate::t!("engine.unknown_model", name = id))?;
+    if m.group != crate::models::Group::Face {
+        return Err(crate::t!("engine.not_a_face_model", name = m.name.get()));
+    }
+    if !models.onnx_runtime {
+        return Err(crate::t!("engine.onnx_unavailable"));
+    }
+    let det = models
+        .catalog
+        .model("yunet")
+        .ok_or_else(|| crate::t!("engine.unknown_model", name = "yunet"))?;
+    for need in [m, det] {
+        if !models.catalog_files_present(need) {
+            return Err(crate::t!("engine.model_not_installed", name = need.name.get()));
+        }
+    }
+    let file = |e: &crate::models::ModelEntry| {
+        e.onnx
+            .as_ref()
+            .map(|o| models.base.join(&o.file))
+            .ok_or_else(|| crate::t!("engine.not_a_face_model", name = e.name.get()))
+    };
+    Ok(onnx::face::FaceRestorer::new(m.name.get().to_string(), file(det)?, file(m)?, strength))
+}
+
 /// 1x restoration model (catalog group "restore", or a 1x custom ONNX model).
 pub fn restore_backend(id: &str, tools: &ToolSet, models: &ModelSet) -> Result<Arc<dyn Upscaler>, String> {
     if let Some(m) = models.catalog.model(id)

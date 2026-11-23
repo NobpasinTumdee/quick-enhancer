@@ -769,7 +769,7 @@ fn process_chunks(
                             })?
                             .into_rgb8();
                         // In-memory AI (ONNX) after frame generation; sessions serialize.
-                        let img = plan.upscale_mem(img, stop)?;
+                        let img = plan.ai_mem(img, stop)?;
                         Ok(plan.post_process(img))
                     })
                     .collect()
@@ -825,7 +825,7 @@ fn process_memory(
             progress.stage(Stage::Upscale);
             let mut up = Vec::with_capacity(group.len());
             for f in group.drain(..) {
-                up.push(plan.upscale_mem(f, stop)?);
+                up.push(plan.ai_mem(f, stop)?);
             }
             group = up;
             progress.stage(Stage::Sharpen);

@@ -218,6 +218,13 @@ fn image_mode(app: &mut App, ui: &mut egui::Ui) {
             pick = p;
         }
     });
+    ui.horizontal_wrapped(|ui| {
+        ui.label(t!("settings.faces"));
+        let p = crate::ui::settings::face_picker(ui, "img-face", &app.models_ui, s);
+        if !matches!(p, crate::ui::models::ComboPick::None) {
+            pick = p;
+        }
+    });
     if let Some(why) = profile_unavailable(s.profile, s.model.as_deref(), MediaKind::Image, &env.tools, &env.models) {
         ui.colored_label(WARN, format!("⚠ {why}"));
     }

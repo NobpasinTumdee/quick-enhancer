@@ -322,3 +322,112 @@ fn blockiness(img: &image::RgbImage) -> f64 {
     }
     (edge / ne) / (inner / ni).max(1e-6)
 }
+
+#[test]
+#[ignore = "downloads ~700 MB of face models, needs a DirectX 12 GPU and .feasibility/ reference images"]
+fn face_detection_and_restoration_match_the_reference() {
+    use quick_enhancer::config::Priority;
+    use quick_enhancer::engines::EngineCtx;
+    use quick_enhancer::models::RuntimeKind;
+    let feas = root().join(".feasibility");
+    let project_tools = ToolSet::from_bin_dir(&root().join("bin"));
+    let gpus = devices::enumerate().unwrap_or_default();
+    if project_tools.ffmpeg.is_none() || gpus.is_empty() || !feas.join("ref").join("gfpgan.png").is_file() {
+        eprintln!("SKIPPED: needs bin/ffmpeg, a GPU and the .feasibility reference images");
+        return;
+    }
+    let base = root().join("target").join("it-scratch").join("onnx-home");
+    let paths = AppPaths::from_base(base.clone());
+    install(&paths, &["ort-dml", "onnx-yunet", "onnx-gfpgan", "onnx-codeformer"]);
+    quick_enhancer::engines::onnx::runtime::configure(&base, RuntimeKind::DirectMl, &gpus);
+    let env = Env {
+        models: ModelSet::discover(&paths.models),
+        gpus: gpus.clone(),
+        encoders: Arc::new(RwLock::new(encoders::detect(project_tools.ffmpeg.as_deref()))),
+        monitor: None,
+        cores: 8,
+        tools: project_tools,
+    };
+
+    // Detection vs OpenCV FaceDetectorYN on the same model (.feasibility/conv/yunet_ref.py).
+    let fr = quick_enhancer::engines::face_backend("gfpgan-1.4", 1.0, &env.models).expect("face backend");
+    let cancel = CancelToken::new();
+    let ctx = EngineCtx {
+        cancel: &cancel,
+        gpu: Some(gpus[0].index),
+        jobs: "1:4:1".into(),
+        tile: 0,
+        priority: Priority::Normal,
+        progress: None,
+    };
+    // (file, bbox x y w h, left eye)
+    for (file, bbox, eye) in [
+        ("astronaut_512.png", [178.2, 62.9, 89.9, 113.3], [200.1, 101.8]),
+        ("frame_1080p.png", [376.3, 128.7, 194.6, 242.8], [431.0, 212.6]),
+    ] {
+        let img = image::open(feas.join("inputs").join(file)).unwrap().into_rgb8();
+        let faces = fr.detect(&img, &ctx).expect("detect");
+        eprintln!("{file}: {faces:?}");
+        assert_eq!(faces.len(), 1, "{file}");
+        let f = &faces[0];
+        let tol = bbox[2] * 0.06;
+        for k in 0..4 {
+            assert!((f.bbox[k] - bbox[k]).abs() < tol, "{file}: bbox {:?} vs {bbox:?}", f.bbox);
+        }
+        assert!((f.kps[0][0] - eye[0]).abs() < tol && (f.kps[0][1] - eye[1]).abs() < tol, "{file}: eye {:?}", f.kps[0]);
+    }
+
+    // Restoration through the pipeline vs the Python prototype (.feasibility/conv/face_test.py).
+    let dir = base.join("work3");
+    std::fs::create_dir_all(&dir).unwrap();
+    let src = feas.join("inputs").join("face_lq_up512.png");
+    let lq = image::open(&src).unwrap().into_rgb8();
+    for (model, strength, reference) in [("gfpgan-1.4", 1.0, "gfpgan.png"), ("codeformer", 0.7, "codeformer.png")] {
+        let mut s = JobSettings {
+            profile: Profile::NoAi,
+            scale: ScaleMode::X1,
+            face_on: true,
+            face_model: model.into(),
+            face_strength: strength,
+            ..Default::default()
+        };
+        s.output.image_format = ImageFormat::Png;
+        s.video.temp_dir = Some(dir.clone());
+        let t = std::time::Instant::now();
+        let out = run(&env, s, &src, dir.join(format!("{model}.png")));
+        let r = image::open(feas.join("ref").join(reference)).unwrap().into_rgb8();
+        // Face region: generative models (CodeFormer) don't reproduce pixels exactly, so check
+        // that the face got much sharper and keeps the reference's colours.
+        let face = |i: &image::RgbImage| image::imageops::crop_imm(i, 150, 40, 140, 160).to_image();
+        let (fo, fr, fl) = (face(&out), face(&r), face(&lq));
+        let (so, sr, sl) = (sharpness(&fo), sharpness(&fr), sharpness(&fl));
+        let shift = (mean(&fo) - mean(&fr)).abs();
+        eprintln!(
+            "{model}: sharpness {sl:.2} -> {so:.2} (reference {sr:.2}), colour shift {shift:.1}, {:.1}s",
+            t.elapsed().as_secs_f32()
+        );
+        assert!(so > sl * 1.5 && so > sr * 0.6, "{model}: face not restored ({sl:.2} -> {so:.2})");
+        assert!(shift < 6.0, "{model}: colour shift {shift:.1}");
+        // Outside the face the image is untouched.
+        let corner = |i: &image::RgbImage| image::imageops::crop_imm(i, 0, 400, 100, 100).to_image();
+        assert!(psnr(&corner(&out), &corner(&lq)) > 45.0, "{model} changed the background");
+    }
+}
+
+/// Mean absolute Laplacian (detail / sharpness).
+fn sharpness(img: &image::RgbImage) -> f64 {
+    let g = image::imageops::grayscale(img);
+    let (w, h) = g.dimensions();
+    let mut acc = 0.0;
+    for y in 1..h - 1 {
+        for x in 1..w - 1 {
+            let c = g.get_pixel(x, y).0[0] as f64 * 4.0;
+            let n = [(x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)]
+                .iter()
+                .map(|&(xx, yy)| g.get_pixel(xx, yy).0[0] as f64)
+                .sum::<f64>();
+            acc += (c - n).abs();
+        }
+    }
+    acc / ((w - 2) * (h - 2)) as f64
+}
