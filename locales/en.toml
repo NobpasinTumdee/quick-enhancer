@@ -270,6 +270,8 @@ suffix_tip = "Added to the source name, e.g. photo → photo_enhanced.png"
 model = "Model"
 model_auto = "Automatic (profile default)"
 model_custom = "{name} (custom)"
+restore = "AI cleanup"
+restore_hint = "Removes JPEG/compression artefacts or noise with a 1x AI model before upscaling."
 
 [framegen]
 target = "Target FPS"
@@ -328,6 +330,7 @@ onnx_unavailable = "The ONNX runtime is not installed. Install it on the AI mode
 unknown_model = "Unknown model {name}"
 model_not_installed = "{name} is not installed. Install it on the AI models page."
 not_an_upscaler = "{name} is not an upscaling model"
+not_a_restorer = "{name} is not a 1x cleanup model."
 
 [encoder]
 detecting = "detecting…"
@@ -337,6 +340,7 @@ test_failed = "test encode failed: {reason}"
 [warn]
 cpu_slow = "CPU selected: AI models are very slow (or unavailable) on CPU"
 no_gpu = "No suitable GPU found — running on CPU"
+restore_cpu = "AI cleanup runs on the CPU and will be slow."
 
 [note]
 vfr_converted = "VFR source converted to CFR {fps} FPS"

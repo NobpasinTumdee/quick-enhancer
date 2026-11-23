@@ -211,6 +211,13 @@ fn image_mode(app: &mut App, ui: &mut egui::Ui) {
             pick = crate::ui::models::upscale_model_combo(ui, "img-model", &app.models_ui, &env.models, &mut s.model);
         });
     }
+    ui.horizontal(|ui| {
+        ui.label(t!("settings.restore"));
+        let p = crate::ui::settings::restore_picker(ui, "img-restore", &app.models_ui, &env.models, s);
+        if !matches!(p, crate::ui::models::ComboPick::None) {
+            pick = p;
+        }
+    });
     if let Some(why) = profile_unavailable(s.profile, s.model.as_deref(), MediaKind::Image, &env.tools, &env.models) {
         ui.colored_label(WARN, format!("⚠ {why}"));
     }

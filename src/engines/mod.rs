@@ -210,6 +210,20 @@ pub fn uses_model(profile: Profile) -> bool {
     !matches!(profile, Profile::PixelArt | Profile::NoAi)
 }
 
+/// 1x restoration model (catalog group "restore", or a 1x custom ONNX model).
+pub fn restore_backend(id: &str, tools: &ToolSet, models: &ModelSet) -> Result<Arc<dyn Upscaler>, String> {
+    if let Some(m) = models.catalog.model(id)
+        && m.group != crate::models::Group::Restore
+    {
+        return Err(crate::t!("engine.not_a_restorer", name = m.name.get()));
+    }
+    let b = backend_for_model(id, tools, models)?;
+    if b.native_scales() != [1] || !b.in_memory() {
+        return Err(crate::t!("engine.not_a_restorer", name = b.name()));
+    }
+    Ok(b)
+}
+
 /// Upscaler for an explicit model id (catalog id or `custom:<name>`), or why it can't run.
 pub fn backend_for_model(
     id: &str,

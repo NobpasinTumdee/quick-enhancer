@@ -132,6 +132,14 @@ pub fn enhancement(app: &mut App, ui: &mut egui::Ui) {
             pick = crate::ui::models::upscale_model_combo(ui, "upmodel", &app.models_ui, &env.models, &mut s.model);
             ui.end_row();
         }
+        ui.label(t!("settings.restore"));
+        ui.horizontal_wrapped(|ui| {
+            let p = restore_picker(ui, "restoremodel", &app.models_ui, &env.models, s);
+            if !matches!(p, crate::ui::models::ComboPick::None) {
+                pick = p;
+            }
+        });
+        ui.end_row();
         ui.label(t!("settings.scale"));
         egui::ComboBox::from_id_salt("scale")
             .selected_text(s.scale.label())
@@ -178,6 +186,27 @@ pub fn enhancement(app: &mut App, ui: &mut egui::Ui) {
         }
     }
     crate::ui::models::handle_pick(app, pick);
+}
+
+/// "AI cleanup" checkbox + 1x restore model picker (settings grid and photo studio).
+pub fn restore_picker(
+    ui: &mut egui::Ui,
+    id_salt: &str,
+    mu: &crate::ui::models::ModelsUi,
+    models: &crate::paths::ModelSet,
+    s: &mut crate::config::JobSettings,
+) -> crate::ui::models::ComboPick {
+    ui.checkbox(&mut s.restore_on, "").on_hover_text(t!("settings.restore_hint"));
+    ui.add_enabled_ui(s.restore_on, |ui| {
+        let extra: Vec<(String, String)> = models
+            .custom
+            .iter()
+            .filter(|c| c.kind == crate::models::CustomKind::Onnx && c.scale == Some(1))
+            .map(|c| (c.id.clone(), format!("{} ({})", c.name, t!("settings.model_custom"))))
+            .collect();
+        crate::ui::models::model_combo(ui, id_salt, mu, crate::models::Group::Restore, &extra, &mut s.restore_model)
+    })
+    .inner
 }
 
 pub fn framegen(app: &mut App, ui: &mut egui::Ui) {

@@ -543,7 +543,7 @@ fn decode_loop(
             }
         };
         let is_cut = detector.as_mut().is_some_and(|d| d.push(&frame));
-        let frame = plan.pre_filter(frame);
+        let frame = plan.pre_stage(frame, stop)?;
         progress.update(|p| p.extracted = g + 1);
 
         if !disk_mode {

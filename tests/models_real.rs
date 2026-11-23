@@ -224,3 +224,101 @@ fn onnx_models_on_gpu_match_cpu_and_run_video_in_memory() {
     let notices = quick_enhancer::engines::onnx::runtime::take_notices();
     eprintln!("notices: {notices:?}");
 }
+
+#[test]
+#[ignore = "downloads ~200 MB of ONNX models and needs a DirectX 12 GPU"]
+fn onnx_transformers_and_restore_models_run() {
+    use quick_enhancer::models::RuntimeKind;
+    let project_tools = ToolSet::from_bin_dir(&root().join("bin"));
+    let gpus = devices::enumerate().unwrap_or_default();
+    if project_tools.ffmpeg.is_none() || gpus.is_empty() {
+        eprintln!("SKIPPED: needs bin/ffmpeg and a GPU");
+        return;
+    }
+    let base = root().join("target").join("it-scratch").join("onnx-home");
+    let paths = AppPaths::from_base(base.clone());
+    install(
+        &paths,
+        &["ort-dml", "onnx-dat2-nomos2", "onnx-hatl-bhi", "onnx-dejpg", "onnx-denoise", "onnx-scunet"],
+    );
+    quick_enhancer::engines::onnx::runtime::configure(&base, RuntimeKind::DirectMl, &gpus);
+    let env = Env {
+        models: ModelSet::discover(&paths.models),
+        gpus,
+        encoders: Arc::new(RwLock::new(encoders::detect(project_tools.ffmpeg.as_deref()))),
+        monitor: None,
+        cores: 8,
+        tools: project_tools,
+    };
+    let dir = base.join("work2");
+    std::fs::create_dir_all(&dir).unwrap();
+    let src = dir.join("in.jpg");
+    let clean = image::RgbImage::from_fn(200, 140, |x, y| {
+        let v = ((x as f32 / 9.0).sin() * 60.0 + (y as f32 / 7.0).cos() * 60.0 + 128.0) as u8;
+        image::Rgb([v, (x % 256) as u8, (y * 2 % 256) as u8])
+    });
+    // Low-quality JPEG: something for the cleanup models to remove.
+    let mut f = std::fs::File::create(&src).unwrap();
+    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut f, 20).encode_image(&clean).unwrap();
+    drop(f);
+
+    // Transformer SR (static tiles, fp16 / fp32).
+    for model in ["dat2-nomos2-4x", "hatl-bhi-4x"] {
+        let mut s = JobSettings { profile: Profile::Realistic, model: Some(model.into()), scale: ScaleMode::X4, ..Default::default() };
+        s.output.image_format = ImageFormat::Png;
+        s.video.temp_dir = Some(dir.clone());
+        let t = std::time::Instant::now();
+        let img = run(&env, s, &src, dir.join(format!("{model}.png")));
+        eprintln!("{model}: {:?} in {:.1}s", img.dimensions(), t.elapsed().as_secs_f32());
+        assert_eq!(img.dimensions(), (800, 560));
+        let m = mean(&img);
+        assert!((40.0..220.0).contains(&m), "{model}: mean {m}");
+    }
+
+    // 1x cleanup without an upscale model: JPEG block edges must get weaker, colours stay.
+    let jpeg = image::open(&src).unwrap().into_rgb8();
+    let before = blockiness(&jpeg);
+    for model in ["dejpg-1x", "denoise-1x", "scunet-1x"] {
+        let mut s = JobSettings {
+            profile: Profile::NoAi,
+            scale: ScaleMode::X1,
+            restore_on: true,
+            restore_model: model.into(),
+            ..Default::default()
+        };
+        s.output.image_format = ImageFormat::Png;
+        s.video.temp_dir = Some(dir.clone());
+        let t = std::time::Instant::now();
+        let img = run(&env, s, &src, dir.join(format!("{model}.png")));
+        assert_eq!(img.dimensions(), (200, 140));
+        let after = blockiness(&img);
+        let shift = (mean(&img) - mean(&jpeg)).abs();
+        eprintln!(
+            "{model}: blockiness {before:.2} -> {after:.2}, mean shift {shift:.1}, {:.1}s",
+            t.elapsed().as_secs_f32()
+        );
+        assert!(after < before, "{model} did not reduce JPEG blocking ({before:.2} -> {after:.2})");
+        assert!(shift < 6.0, "{model} shifted brightness by {shift:.1}");
+    }
+}
+
+/// Mean horizontal step across 8-pixel JPEG block edges divided by the mean step inside
+/// blocks (≈1 for a clean image, >1 with blocking).
+fn blockiness(img: &image::RgbImage) -> f64 {
+    let (mut edge, mut ne, mut inner, mut ni) = (0.0, 0.0, 0.0, 0.0);
+    for y in 0..img.height() {
+        for x in 0..img.width() - 1 {
+            let a = img.get_pixel(x, y).0;
+            let b = img.get_pixel(x + 1, y).0;
+            let d: f64 = (0..3).map(|c| (a[c] as f64 - b[c] as f64).abs()).sum();
+            if x % 8 == 7 {
+                edge += d;
+                ne += 1.0;
+            } else {
+                inner += d;
+                ni += 1.0;
+            }
+        }
+    }
+    (edge / ne) / (inner / ni).max(1e-6)
+}

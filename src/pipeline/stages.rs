@@ -34,6 +34,8 @@ pub struct StagePlan {
     pub kind: MediaKind,
     pub scale: ScalePlan,
     pub backend: UpscaleBackend,
+    /// 1x AI restoration (JPEG artefacts / noise) at source resolution, before upscaling.
+    pub restore: Option<Arc<dyn crate::engines::Upscaler>>,
     pub denoise: f32,
     pub sharpen: SharpenParams,
     /// Local contrast strength (0 = off), applied after sharpening.
@@ -67,6 +69,16 @@ impl StagePlan {
         if let Some(w) = choice.warning {
             warnings.push(w);
         }
+        let restore = if s.restore_on {
+            let r = crate::engines::restore_backend(&s.restore_model, &env.tools, &env.models)
+                .map_err(PipelineError::Setup)?;
+            if cpu_only {
+                warnings.push(crate::t!("warn.restore_cpu"));
+            }
+            Some(r)
+        } else {
+            None
+        };
         let even = info.kind == MediaKind::Video;
         let scale = plan_scale(
             info.width,
@@ -90,6 +102,7 @@ impl StagePlan {
             kind: info.kind,
             scale,
             backend: choice.backend,
+            restore,
             denoise: s.denoise,
             sharpen: SharpenParams {
                 mode: s.sharpen,
@@ -130,15 +143,7 @@ impl StagePlan {
         if !engine.in_memory() {
             return Ok(img);
         }
-        let ctx = EngineCtx {
-            cancel,
-            gpu: self.gpu,
-            jobs: self.resources.jobs.clone(),
-            tile: self.tile(),
-            priority: self.resources.priority,
-            progress: None,
-        };
-        engine.upscale_image(&img, scale, &ctx).map_err(|e| {
+        engine.upscale_image(&img, scale, &self.engine_ctx(cancel)).map_err(|e| {
             if e.is_cancelled() {
                 PipelineError::Cancelled
             } else {
@@ -162,7 +167,33 @@ impl StagePlan {
         }
     }
 
-    /// Stage 1: denoise at source resolution.
+    fn engine_ctx<'a>(&self, cancel: &'a CancelToken) -> EngineCtx<'a> {
+        EngineCtx {
+            cancel,
+            gpu: self.gpu,
+            jobs: self.resources.jobs.clone(),
+            tile: self.tile(),
+            priority: self.resources.priority,
+            progress: None,
+        }
+    }
+
+    /// Stage 1: AI restoration (if enabled), then denoise, at source resolution.
+    pub fn pre_stage(&self, img: RgbImage, cancel: &CancelToken) -> Result<RgbImage, PipelineError> {
+        let img = match &self.restore {
+            Some(r) => r.upscale_image(&img, 1, &self.engine_ctx(cancel)).map_err(|e| {
+                if e.is_cancelled() {
+                    PipelineError::Cancelled
+                } else {
+                    PipelineError::Engine(e)
+                }
+            })?,
+            None => img,
+        };
+        Ok(self.pre_filter(img))
+    }
+
+    /// Denoise at source resolution.
     pub fn pre_filter(&self, img: RgbImage) -> RgbImage {
         if self.denoise <= 0.0 {
             return img;
@@ -243,7 +274,7 @@ impl StagePlan {
         work: &Path,
         cancel: &CancelToken,
     ) -> Result<RgbImage, PipelineError> {
-        let img = self.pre_filter(img);
+        let img = self.pre_stage(img, cancel)?;
         if cancel.is_cancelled() {
             return Err(PipelineError::Cancelled);
         }
@@ -288,6 +319,9 @@ impl StagePlan {
         )];
         if self.scale.needs_resize || self.scale.model_scale.is_some() {
             parts.push(self.scale.note.clone());
+        }
+        if let Some(r) = &self.restore {
+            parts.insert(0, format!("{} →", r.name()));
         }
         parts.join(" · ")
     }
