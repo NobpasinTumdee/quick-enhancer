@@ -80,6 +80,22 @@ if (-not (Test-Path $exe)) { throw "$exe not found" }
 $exeVer = (Get-Item $exe).VersionInfo.ProductVersion
 if ($exeVer -and $exeVer -ne $version) { throw "exe version $exeVer does not match Cargo.toml $version (stale build?)" }
 
+Step "Check that the exe imports no MinGW runtime DLLs"
+$objdump = (Get-Command objdump -ErrorAction SilentlyContinue).Source
+$wl = Join-Path $env:LOCALAPPDATA "mingw-winlibs\mingw64\bin\objdump.exe"
+if (-not $objdump -and (Test-Path $wl)) { $objdump = $wl }
+if ($objdump) {
+    $imports = & $objdump -p $exe 2>$null | Select-String "DLL Name:\s*(\S+)" | ForEach-Object { $_.Matches[0].Groups[1].Value }
+    if (-not $imports) { throw "objdump returned no imports for $exe" }
+    $bad = $imports | Where-Object { $_ -match '^(libgcc_s_.*|libwinpthread-.*|libstdc\+\+-.*)\.dll$' }
+    if ($bad) { throw "QuickEnhancer.exe depends on MinGW runtime DLLs: $($bad -join ', ') (static linking in .cargo/config.toml not applied?)" }
+    Write-Host "  imports: $($imports -join ', ')"
+} elseif ((rustc -vV 2>$null) -match 'host: .*windows-gnu') {
+    throw "objdump not found: cannot verify the GNU build (put WinLibs mingw64\bin on PATH)"
+} else {
+    Write-Host "  (objdump not found - skipped)" -ForegroundColor Yellow
+}
+
 Step "Sign exe"
 Invoke-CodeSign $exe
 

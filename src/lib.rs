@@ -15,6 +15,7 @@ pub mod devices;
 pub mod engines;
 pub mod logging;
 pub mod media;
+pub mod models;
 pub mod monitor;
 pub mod paths;
 pub mod pipeline;

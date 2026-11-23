@@ -27,14 +27,14 @@ You need **one** of the two Windows toolchains below.
    cargo build --release
    ```
 
-The icon and version info are compiled with the SDK's `rc.exe`, which `winresource` finds
-automatically.
+The icon and version info are embedded by `build.rs` itself (it writes the `.rsrc` COFF
+object), so no `rc.exe` / `windres` is needed with either toolchain.
 
 ### Option B — GNU (MinGW-w64)
 
 Works without Visual Studio, but needs a **complete** MinGW-w64 toolchain on `PATH`: some
-dependencies link through `raw-dylib`, which needs `dlltool` **and** `as`, and `winresource` needs
-`windres`. The toolchain bundled with rustup's GNU target is not enough. A
+dependencies (`ort`, `libloading`) link through `raw-dylib`, which needs `dlltool` **and** `as`.
+The toolchain bundled with rustup's GNU target is not enough. A
 [winlibs](https://winlibs.com/) release (UCRT, x86_64, posix threads) works:
 
 1. Unpack winlibs, e.g. to `%LOCALAPPDATA%\mingw-winlibs` (it contains `mingw64\bin`).
@@ -53,9 +53,17 @@ dependencies link through `raw-dylib`, which needs `dlltool` **and** `as`, and `
    cargo build --release
    ```
 
-If `windres` is missing the build still succeeds but prints
-`warning: could not embed Windows resources` and the exe has no icon/version info — the installer
-then cannot read the version (pass it with `/DAppVersion=x.y.z`, see below).
+`.cargo/config.toml` links libgcc and winpthread **statically**, so `QuickEnhancer.exe` needs no
+MinGW DLLs (`libgcc_s_seh-1.dll`, `libwinpthread-1.dll`, `libstdc++-6.dll`). `scripts/release.ps1`
+checks this with `objdump -p` and fails if one of them is imported. To check by hand:
+
+```sh
+objdump -p target/release/QuickEnhancer.exe | grep "DLL Name"
+```
+
+The ONNX Runtime (`onnxruntime.dll`, DirectML or CUDA) is **not** linked at build time: the `ort`
+crate uses `load-dynamic`, and the app loads the DLL that the Model Manager downloaded into
+`runtime/dml/` or `runtime/cuda/`. Building needs no ONNX Runtime files.
 
 ## Running during development
 
