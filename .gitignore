@@ -14,3 +14,12 @@
 /QuickEnhancer.exe
 /enhancer.exe
 /.feasibility/
+# Written by portable / cargo run since 2.2 (ONNX runtimes, catalog cache, tool licences)
+/runtime/
+/models-catalog.json
+/models-catalog.json.tmp
+/licenses/models/
+/licenses/nvidia/
+/licenses/onnxruntime/
+/licenses/onnxruntime-cuda/
+/licenses/realcugan/

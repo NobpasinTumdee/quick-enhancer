@@ -195,6 +195,10 @@ pub enum RuntimeNeed {
     Cuda,
 }
 
+/// Downloaded newer catalog, next to the tools. Not `models.json`: in portable / `cargo run`
+/// mode the tools folder is the project folder, whose `models.json` is the source file.
+pub const CACHE_FILE: &str = "models-catalog.json";
+
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct Catalog {
     pub schema: u32,
@@ -229,11 +233,11 @@ impl Catalog {
             .expect("embedded models.json is valid (tested)")
     }
 
-    /// The cached catalog in `<base>/models.json` when it is valid, has our schema and is newer
+    /// The cached catalog in `<base>/models-catalog.json` when it is valid, has our schema and is newer
     /// than the embedded one; otherwise the embedded catalog.
     pub fn load(base: &Path) -> Catalog {
         let embedded = Self::embedded();
-        let cached = std::fs::read_to_string(base.join("models.json"))
+        let cached = std::fs::read_to_string(base.join(CACHE_FILE))
             .ok()
             .and_then(|t| Self::parse(&t, &ToolsManifest::embedded()).ok());
         match cached {
@@ -254,9 +258,9 @@ impl Catalog {
             return Ok(None);
         }
         std::fs::create_dir_all(base)?;
-        let tmp = base.join("models.json.tmp");
+        let tmp = base.join(format!("{CACHE_FILE}.tmp"));
         std::fs::write(&tmp, text)?;
-        std::fs::rename(&tmp, base.join("models.json"))?;
+        std::fs::rename(&tmp, base.join(CACHE_FILE))?;
         Ok(Some(new.catalog_version))
     }
 
@@ -478,12 +482,12 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let mut v: serde_json::Value = serde_json::from_str(EMBEDDED_CATALOG).unwrap();
         v["catalog_version"] = "9999.1".into();
-        std::fs::write(dir.join("models.json"), v.to_string()).unwrap();
+        std::fs::write(dir.join(CACHE_FILE), v.to_string()).unwrap();
         assert_eq!(Catalog::load(&dir).catalog_version, "9999.1");
         v["catalog_version"] = "1.0".into();
-        std::fs::write(dir.join("models.json"), v.to_string()).unwrap();
+        std::fs::write(dir.join(CACHE_FILE), v.to_string()).unwrap();
         assert_eq!(Catalog::load(&dir).catalog_version, Catalog::embedded().catalog_version);
-        std::fs::write(dir.join("models.json"), "{ broken").unwrap();
+        std::fs::write(dir.join(CACHE_FILE), "{ broken").unwrap();
         assert_eq!(Catalog::load(&dir).catalog_version, Catalog::embedded().catalog_version);
         let _ = std::fs::remove_dir_all(&dir);
     }

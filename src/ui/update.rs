@@ -306,7 +306,7 @@ impl App {
 
 /// Asked once on first run: check for updates automatically at startup?
 pub fn optin_modal(app: &mut App, ctx: &egui::Context) {
-    if !app.ask_update_optin || app.tools_ui.open {
+    if !app.ask_update_optin || app.tools_ui.open || app.wizard.open {
         return;
     }
     let mut answer = None;

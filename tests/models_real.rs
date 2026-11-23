@@ -223,6 +223,26 @@ fn onnx_models_on_gpu_match_cpu_and_run_video_in_memory() {
     assert_eq!(r.frames, 24);
     let notices = quick_enhancer::engines::onnx::runtime::take_notices();
     eprintln!("notices: {notices:?}");
+
+    // Uninstall SPAN through the Model Manager logic, check the state, then reinstall it.
+    use quick_enhancer::models::install::{InstallSnapshot, uninstall};
+    use quick_enhancer::models::ModelState;
+    let cat = Catalog::embedded();
+    let tools = ToolsManifest::embedded();
+    let span = cat.model("span-nomosuni-2x").unwrap();
+    let snap = InstallSnapshot::scan(&paths, &cat, &tools);
+    assert_eq!(snap.state(&cat, &tools, span), ModelState::Installed);
+    let removed = uninstall(&paths, &cat, &tools, &snap, span).expect("uninstall");
+    eprintln!("uninstalled: {removed:?}");
+    assert!(removed.iter().any(|p| p == "onnx-span-nomosuni"), "{removed:?}");
+    let snap = InstallSnapshot::scan(&paths, &cat, &tools);
+    assert_eq!(snap.state(&cat, &tools, span), ModelState::NotInstalled);
+    // The runtime and the other models are untouched.
+    assert!(snap.runtime_dml);
+    assert_eq!(snap.state(&cat, &tools, cat.model("realplksr-nomos2-4x").unwrap()), ModelState::Installed);
+    install(&paths, &["onnx-span-nomosuni"]);
+    let snap = InstallSnapshot::scan(&paths, &cat, &tools);
+    assert_eq!(snap.state(&cat, &tools, span), ModelState::Installed);
 }
 
 #[test]
