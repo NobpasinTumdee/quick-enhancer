@@ -223,6 +223,9 @@ pub struct RifeModel {
     pub arbitrary_count: bool,
 }
 
+/// RIFE models in order of preference when the configured one isn't installed.
+pub const RIFE_PREFERENCE: [&str; 4] = ["rife-v4.26", "rife-v4.6", "rife-v4.25-lite", "rife-v4"];
+
 /// Installed model files.
 #[derive(Clone, Debug, Default)]
 pub struct ModelSet {
@@ -299,9 +302,11 @@ impl ModelSet {
     }
 
     pub fn rife_model(&self, name: &str) -> Option<&RifeModel> {
+        // Missing model (e.g. an older RIFE package): use the best one that is installed.
         self.rife
             .iter()
             .find(|m| m.name == name)
+            .or_else(|| RIFE_PREFERENCE.iter().find_map(|p| self.rife.iter().find(|m| m.name == *p)))
             .or_else(|| self.rife.first())
     }
 
@@ -395,6 +400,19 @@ impl SetupReport {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn missing_rife_model_falls_back_to_the_preferred_installed_one() {
+        let rm = |n: &str| RifeModel { name: n.into(), path: PathBuf::from(n), arbitrary_count: true };
+        let mut m = ModelSet::default();
+        assert!(m.rife_model("rife-v4.26").is_none());
+        // Sorted like discover() does (name descending).
+        m.rife = vec![rm("rife-v4.6"), rm("rife-v4.25-lite"), rm("rife-v4")];
+        assert_eq!(m.rife_model("rife-v4.26").unwrap().name, "rife-v4.6");
+        assert_eq!(m.rife_model("rife-v4").unwrap().name, "rife-v4");
+        m.rife.insert(1, rm("rife-v4.26"));
+        assert_eq!(m.rife_model("gone").unwrap().name, "rife-v4.26");
+    }
 
     fn tmp(name: &str) -> PathBuf {
         let d = std::env::temp_dir().join(format!("qe-paths-{name}-{}", std::process::id()));

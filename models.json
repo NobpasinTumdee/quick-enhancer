@@ -1364,51 +1364,6 @@
    ]
   },
   {
-   "id": "rife-v4.6",
-   "group": "interpolate",
-   "name": {
-    "en": "RIFE v4.6",
-    "th": "RIFE v4.6"
-   },
-   "desc": {
-    "en": "Fast, reliable default for 2x-4x frame rates.",
-    "th": "ค่าเริ่มต้นที่เร็วและเสถียร สำหรับเพิ่มเฟรม 2x-4x"
-   },
-   "backend": "ncnn_rife",
-   "ncnn_name": "rife-v4.6",
-   "scales": [
-    2,
-    3,
-    4
-   ],
-   "speed": 4,
-   "quality": 3,
-   "vram_min_mb": 370,
-   "vram_rec_mb": 740,
-   "cost": {
-    "s_per_mp": 0.07,
-    "vram_mb": 370
-   },
-   "license": {
-    "name": "MIT",
-    "url": "https://github.com/hzwer/ECCV2022-RIFE/blob/main/LICENSE",
-    "commercial": true,
-    "redistribute": true,
-    "attribution": "RIFE by hzwer / Megvii; ncnn port by nihui (TNTwise fork)"
-   },
-   "source": "https://github.com/TNTwise/rife-ncnn-vulkan",
-   "packages": [
-    "rife"
-   ],
-   "files": [
-    "models/rife/rife-v4.6/flownet.param",
-    "models/rife/rife-v4.6/flownet.bin"
-   ],
-   "content": [
-    "video"
-   ]
-  },
-  {
    "id": "rife-v4.26",
    "group": "interpolate",
    "name": {
@@ -1416,8 +1371,8 @@
     "th": "RIFE v4.26"
    },
    "desc": {
-    "en": "Newest RIFE: fewer artifacts in fast motion.",
-    "th": "RIFE รุ่นใหม่ที่สุด ภาพแตกน้อยลงเมื่อเคลื่อนไหวเร็ว"
+    "en": "Newest RIFE (default): fewer artifacts in fast motion.",
+    "th": "RIFE รุ่นใหม่ที่สุด (ค่าเริ่มต้น) ภาพแตกน้อยลงเมื่อเคลื่อนไหวเร็ว"
    },
    "backend": "ncnn_rife",
    "ncnn_name": "rife-v4.26",
@@ -1448,6 +1403,51 @@
    "files": [
     "models/rife/rife-v4.26/flownet.param",
     "models/rife/rife-v4.26/flownet.bin"
+   ],
+   "content": [
+    "video"
+   ]
+  },
+  {
+   "id": "rife-v4.6",
+   "group": "interpolate",
+   "name": {
+    "en": "RIFE v4.6",
+    "th": "RIFE v4.6"
+   },
+   "desc": {
+    "en": "Fast and reliable for 2x-4x frame rates.",
+    "th": "เร็วและเสถียร สำหรับเพิ่มเฟรม 2x-4x"
+   },
+   "backend": "ncnn_rife",
+   "ncnn_name": "rife-v4.6",
+   "scales": [
+    2,
+    3,
+    4
+   ],
+   "speed": 4,
+   "quality": 3,
+   "vram_min_mb": 370,
+   "vram_rec_mb": 740,
+   "cost": {
+    "s_per_mp": 0.07,
+    "vram_mb": 370
+   },
+   "license": {
+    "name": "MIT",
+    "url": "https://github.com/hzwer/ECCV2022-RIFE/blob/main/LICENSE",
+    "commercial": true,
+    "redistribute": true,
+    "attribution": "RIFE by hzwer / Megvii; ncnn port by nihui (TNTwise fork)"
+   },
+   "source": "https://github.com/TNTwise/rife-ncnn-vulkan",
+   "packages": [
+    "rife"
+   ],
+   "files": [
+    "models/rife/rife-v4.6/flownet.param",
+    "models/rife/rife-v4.6/flownet.bin"
    ],
    "content": [
     "video"

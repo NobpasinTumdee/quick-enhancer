@@ -274,10 +274,10 @@ models = [
          requires=["yunet"]),
 ]
 for name, desc, speed, quality, vmin, s in [
-    ("rife-v4.6", T("Fast, reliable default for 2x-4x frame rates.",
-                    "ค่าเริ่มต้นที่เร็วและเสถียร สำหรับเพิ่มเฟรม 2x-4x"), 4, 3, 370, 0.07),
-    ("rife-v4.26", T("Newest RIFE: fewer artifacts in fast motion.",
-                     "RIFE รุ่นใหม่ที่สุด ภาพแตกน้อยลงเมื่อเคลื่อนไหวเร็ว"), 3, 4, 630, 0.08),
+    ("rife-v4.26", T("Newest RIFE (default): fewer artifacts in fast motion.",
+                     "RIFE รุ่นใหม่ที่สุด (ค่าเริ่มต้น) ภาพแตกน้อยลงเมื่อเคลื่อนไหวเร็ว"), 3, 4, 630, 0.08),
+    ("rife-v4.6", T("Fast and reliable for 2x-4x frame rates.",
+                    "เร็วและเสถียร สำหรับเพิ่มเฟรม 2x-4x"), 4, 3, 370, 0.07),
     ("rife-v4.25-lite", T("Light RIFE 4.25 for slower GPUs.", "RIFE 4.25 รุ่นเบา สำหรับการ์ดจอที่ช้า"), 5, 3, 300, 0.05),
     ("rife-v4", T("Older RIFE 4.0.", "RIFE 4.0 รุ่นเก่า"), 4, 2, 370, 0.07),
 ]:

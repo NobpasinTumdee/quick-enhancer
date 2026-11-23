@@ -431,3 +431,65 @@ fn sharpness(img: &image::RgbImage) -> f64 {
     }
     acc / ((w - 2) * (h - 2)) as f64
 }
+
+#[test]
+#[ignore = "downloads the RIFE package (~43 MB) and needs a Vulkan GPU"]
+fn rife_tntwise_models_interpolate() {
+    use quick_enhancer::config::{EncoderChoice, FrameGenMode};
+    use quick_enhancer::media::encoders::VideoEncoder;
+    use quick_enhancer::pipeline::cancel::PauseFlag;
+    use quick_enhancer::pipeline::video_job::{VideoOptions, run_video};
+
+    let project_tools = ToolSet::from_bin_dir(&root().join("bin"));
+    let gpus = devices::enumerate().unwrap_or_default();
+    if project_tools.ffmpeg.is_none() || gpus.is_empty() {
+        eprintln!("SKIPPED: needs bin/ffmpeg and a Vulkan GPU");
+        return;
+    }
+    let base = root().join("target").join("it-scratch").join("rife-home");
+    let paths = AppPaths::from_base(base.clone());
+    install(&paths, &["rife"]);
+    let mut tools = project_tools.clone();
+    tools.rife = ToolSet::from_bin_dir(&paths.bin).rife;
+    assert!(tools.rife.is_some(), "rife exe installed");
+    let env = Env {
+        models: ModelSet::discover(&paths.models),
+        gpus,
+        encoders: Arc::new(RwLock::new(encoders::detect(project_tools.ffmpeg.as_deref()))),
+        monitor: None,
+        cores: 8,
+        tools,
+    };
+    let names: Vec<&str> = env.models.rife.iter().map(|m| m.name.as_str()).collect();
+    eprintln!("rife models: {names:?}");
+    let dir = base.join("work");
+    std::fs::create_dir_all(&dir).unwrap();
+    let src = dir.join("in.mp4");
+    let mut c = quick_enhancer::util::new_command(project_tools.ffmpeg.as_ref().unwrap());
+    c.args(["-hide_banner", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc=size=256x144:rate=12:duration=1", "-pix_fmt", "yuv420p"])
+        .arg(&src);
+    quick_enhancer::util::run_capture(c, None, quick_enhancer::config::Priority::Normal).unwrap();
+    let info = probe::probe(project_tools.ffprobe.as_deref(), &src).unwrap();
+    for model in ["rife-v4.26", "rife-v4.25-lite", "rife-v4.6", "rife-v4"] {
+        assert!(names.contains(&model), "{model} installed");
+        let mut s = JobSettings {
+            profile: Profile::NoAi,
+            scale: ScaleMode::X1,
+            framegen_on: true,
+            framegen: FrameGenMode::X2,
+            rife_model: model.into(),
+            ..Default::default()
+        };
+        s.output.encoder = EncoderChoice::Specific(VideoEncoder::Libx264);
+        s.video.temp_dir = Some(dir.clone());
+        let out = dir.join(format!("{model}.mp4"));
+        let spec = JobSpec { id: 3, info: info.clone(), settings: s, output: out.clone(), edit: None };
+        let t = std::time::Instant::now();
+        let r = run_video(&env, &spec, &ProgressHandle::default(), &CancelToken::new(), &PauseFlag::default(), &VideoOptions::default())
+            .unwrap_or_else(|e| panic!("{model}: {e}"));
+        eprintln!("{model}: {} frames in {:.1}s", r.frames, t.elapsed().as_secs_f32());
+        assert_eq!(r.frames, 24, "{model}");
+        let o = probe::probe(project_tools.ffprobe.as_deref(), &out).unwrap();
+        assert!((o.fps.unwrap().as_f64() - 24.0).abs() < 0.01, "{model}: fps {:?}", o.fps);
+    }
+}

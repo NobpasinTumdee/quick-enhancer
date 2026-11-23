@@ -575,7 +575,7 @@ impl Default for JobSettings {
             scale: ScaleMode::X2,
             framegen: FrameGenMode::Off,
             max_fps: 120,
-            rife_model: "rife-v4.6".into(),
+            rife_model: "rife-v4.26".into(),
             model: None,
             restore_on: false,
             restore_model: "dejpg-1x".into(),
