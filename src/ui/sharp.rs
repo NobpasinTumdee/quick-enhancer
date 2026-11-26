@@ -349,15 +349,10 @@ pub fn sharp_mode(app: &mut App, ui: &mut egui::Ui) {
     // ---- Missing parts ----
     let missing = missing_parts(app);
     if !missing.is_empty() {
-        let size: u64 = missing
-            .iter()
-            .filter_map(|id| app.models_ui.catalog.model(id))
-            .flat_map(|m| m.packages.iter())
-            .collect::<HashSet<_>>()
-            .into_iter()
-            .filter_map(|p| app.models_ui.catalog.package(p))
-            .map(|p| p.size)
-            .sum();
+        // The same plan as the install dialog (runtime included, installed files skipped).
+        let entries: Vec<&crate::models::catalog::ModelEntry> =
+            missing.iter().filter_map(|id| app.models_ui.catalog.model(id)).collect();
+        let size = crate::models::install::plan_size(&app.models_ui.plan_many(&entries, app.config.onnx_runtime, false));
         ui.horizontal_wrapped(|ui| {
             let names: Vec<String> = missing
                 .iter()
