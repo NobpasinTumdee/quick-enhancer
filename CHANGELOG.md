@@ -15,7 +15,7 @@ update check).
   photos, restore faces, smooth motion) and the needed tools and models are downloaded, with the
   total size shown. Model lists in the settings show models that aren't installed greyed out with
   ⬇ and their size; picking one asks to install it, and settings that need a missing model show
-  **Install missing model**.
+  **Install missing parts**.
 - **ONNX backend**: ONNX models run inside the app with ONNX Runtime on **DirectML** (any
   DirectX 12 GPU) or **CUDA** (NVIDIA, optional), downloaded on demand. Tiled with feathered
   seams, frames stay in memory (no temp PNGs), automatic fallback to the CPU with a notice, and
