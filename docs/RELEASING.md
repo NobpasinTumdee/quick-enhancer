@@ -211,6 +211,26 @@ non-commercial license (CodeFormer) may be hosted only with their license text a
    uses it only when its `schema` matches and its `catalog_version` is newer than the embedded one.
    Never replace a model file in place: a new file needs a new name (old catalogs pin the hash).
 
+**New catalog schema → new models release.** When `models.json` gets fields or groups an older app
+can't read, bump `schema` in the generator and point `update_url` at a **new** models release
+(2.3: schema 2 on `models-2026.12`). The older release keeps its schema 1 `models.json`
+unchanged, so installed older versions keep refreshing from it; files already on the older
+release stay where they are and the new catalog keeps their URLs.
+
+**Files over 2 GB** (GitHub's asset limit), e.g. SeedVR2's 3.56 GB `dit.onnx.data`, are
+downloaded from their original host at a pinned revision (a Hugging Face `resolve/<commit>/` URL)
+with the SHA-256 and size in the catalog; check that each URL still answers before a release:
+
+```sh
+curl -sSIL <url> | grep -i content-length
+```
+
+**Real-model tests for Make sharp:** besides `models_real`, run
+`cargo test --release --test sharp_real -- --ignored --nocapture` with `QE_TEST_BASE` (a tools
+root with the ONNX runtime and the Make sharp models) and `QE_TEST_PAIRS` (the evaluation's
+blurry / sharp pairs, see `docs/DEBLUR_EVAL.md`); `QE_TEST_CREATIVE=0` skips the slow generative
+runs.
+
 ## Code signing and SmartScreen
 
 Unsigned installers and exes work, but Windows **SmartScreen** shows "Windows protected your PC"
