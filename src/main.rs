@@ -19,6 +19,13 @@ fn window_icon() -> Option<egui::IconData> {
 }
 
 fn main() -> anyhow::Result<()> {
+    // `QuickEnhancer.exe --worker <task.json>`: run one heavy AI task in this child process and
+    // exit (no window, no log file of its own; the parent logs what it reports).
+    let mut args = std::env::args_os().skip(1);
+    if args.next().as_deref() == Some(std::ffi::OsStr::new(quick_enhancer::worker::ARG)) {
+        let task = args.next().map(std::path::PathBuf::from).unwrap_or_default();
+        std::process::exit(quick_enhancer::worker::child_main(&task));
+    }
     let env = PathEnv::current();
     let paths = AppPaths::resolve_with(&env);
     paths.ensure_dirs();

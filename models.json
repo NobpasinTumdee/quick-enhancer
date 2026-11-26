@@ -1,7 +1,7 @@
 {
- "schema": 1,
- "catalog_version": "2026.11.3",
- "update_url": "https://github.com/NobpasinTumdee/quick-enhancer/releases/download/models-2026.11/models.json",
+ "schema": 2,
+ "catalog_version": "2026.12.1",
+ "update_url": "https://github.com/NobpasinTumdee/quick-enhancer/releases/download/models-2026.12/models.json",
  "packages": [
   {
    "id": "vcrt-dml",
@@ -484,6 +484,139 @@
     {
      "from": "codeformer-0.1.0-512.onnx",
      "to": "models/onnx/codeformer-0.1.0-512.onnx"
+    }
+   ]
+  },
+  {
+   "id": "onnx-restormer-motion",
+   "name": "Restormer motion deblurring (ONNX fp16)",
+   "version": "2026.12",
+   "required": false,
+   "platform": "any",
+   "url": "https://github.com/NobpasinTumdee/quick-enhancer/releases/download/models-2026.12/restormer-motion-fp16.onnx",
+   "sha256": "6a8c46a3fd6fca3eeb5e61dce0ba2af93e69b553a492e04fd0c358cbcd08f9de",
+   "size": 54860561,
+   "archive": "file",
+   "license": "MIT (Syed Waqas Zamir et al., Restormer)",
+   "homepage": "https://github.com/swz30/Restormer",
+   "files": [
+    {
+     "from": "restormer-motion-fp16.onnx",
+     "to": "models/onnx/restormer-motion-fp16.onnx"
+    }
+   ]
+  },
+  {
+   "id": "onnx-restormer-defocus",
+   "name": "Restormer defocus deblurring (ONNX fp16)",
+   "version": "2026.12",
+   "required": false,
+   "platform": "any",
+   "url": "https://github.com/NobpasinTumdee/quick-enhancer/releases/download/models-2026.12/restormer-defocus-fp16.onnx",
+   "sha256": "ebe3e26750366837bb37d294abac9aec358262b3c0ba47494661c3ea786b35df",
+   "size": 54860561,
+   "archive": "file",
+   "license": "MIT (Syed Waqas Zamir et al., Restormer)",
+   "homepage": "https://github.com/swz30/Restormer",
+   "files": [
+    {
+     "from": "restormer-defocus-fp16.onnx",
+     "to": "models/onnx/restormer-defocus-fp16.onnx"
+    }
+   ]
+  },
+  {
+   "id": "seedvr2-dit",
+   "name": "SeedVR2-3B DiT graph (int8)",
+   "version": "e2a111d",
+   "required": false,
+   "platform": "any",
+   "url": "https://huggingface.co/moonbox-dev/SeedVR2-3B-ONNX/resolve/e2a111d55922e9059a0d663bc189da766fc6b775/int8/dit.onnx",
+   "sha256": "e73874804e6062a81ea3a047ed74e671f27d54fee158408b04d803b0f6c95d21",
+   "size": 1630270,
+   "archive": "file",
+   "license": "Apache-2.0 (SeedVR2 by ByteDance Seed; ONNX export by Moonbox)",
+   "homepage": "https://huggingface.co/moonbox-dev/SeedVR2-3B-ONNX",
+   "files": [
+    {
+     "from": "dit.onnx",
+     "to": "models/seedvr2-3b/dit.onnx"
+    }
+   ]
+  },
+  {
+   "id": "seedvr2-dit-data",
+   "name": "SeedVR2-3B DiT weights (int8)",
+   "version": "e2a111d",
+   "required": false,
+   "platform": "any",
+   "url": "https://huggingface.co/moonbox-dev/SeedVR2-3B-ONNX/resolve/e2a111d55922e9059a0d663bc189da766fc6b775/int8/dit.onnx.data",
+   "sha256": "c36caaa979408e6b3ad6c956ba55e92d9120ae0c84ac62bc8537543d6e79790f",
+   "size": 3555440304,
+   "archive": "file",
+   "license": "Apache-2.0 (SeedVR2 by ByteDance Seed; ONNX export by Moonbox)",
+   "homepage": "https://huggingface.co/moonbox-dev/SeedVR2-3B-ONNX",
+   "files": [
+    {
+     "from": "dit.onnx.data",
+     "to": "models/seedvr2-3b/dit.onnx.data"
+    }
+   ]
+  },
+  {
+   "id": "seedvr2-vae-enc",
+   "name": "SeedVR2-3B VAE encoder",
+   "version": "e2a111d",
+   "required": false,
+   "platform": "any",
+   "url": "https://huggingface.co/moonbox-dev/SeedVR2-3B-ONNX/resolve/e2a111d55922e9059a0d663bc189da766fc6b775/int8/vae_enc_first.onnx",
+   "sha256": "d6a9041ed8a4eacf403229894704327dab9275218ac933dcd54cd44cb0db6dbe",
+   "size": 200468788,
+   "archive": "file",
+   "license": "Apache-2.0 (SeedVR2 by ByteDance Seed; ONNX export by Moonbox)",
+   "homepage": "https://huggingface.co/moonbox-dev/SeedVR2-3B-ONNX",
+   "files": [
+    {
+     "from": "vae_enc_first.onnx",
+     "to": "models/seedvr2-3b/vae_enc_first.onnx"
+    }
+   ]
+  },
+  {
+   "id": "seedvr2-vae-dec",
+   "name": "SeedVR2-3B VAE decoder",
+   "version": "e2a111d",
+   "required": false,
+   "platform": "any",
+   "url": "https://huggingface.co/moonbox-dev/SeedVR2-3B-ONNX/resolve/e2a111d55922e9059a0d663bc189da766fc6b775/int8/vae_dec_first.onnx",
+   "sha256": "8250314ef04dcae8adf28b5209baa254ba478537257206cce5f6670cd7eb05a7",
+   "size": 301715063,
+   "archive": "file",
+   "license": "Apache-2.0 (SeedVR2 by ByteDance Seed; ONNX export by Moonbox)",
+   "homepage": "https://huggingface.co/moonbox-dev/SeedVR2-3B-ONNX",
+   "files": [
+    {
+     "from": "vae_dec_first.onnx",
+     "to": "models/seedvr2-3b/vae_dec_first.onnx"
+    }
+   ]
+  },
+  {
+   "id": "seedvr2-license",
+   "name": "SeedVR2-3B ONNX licence (Apache-2.0)",
+   "version": "e2a111d",
+   "required": false,
+   "platform": "any",
+   "url": "https://huggingface.co/moonbox-dev/SeedVR2-3B-ONNX/resolve/e2a111d55922e9059a0d663bc189da766fc6b775/int8/LICENSE.txt",
+   "sha256": "fa62fea050d25dbb5915b80cbb0a27b43317fe3c3fc614c0142b7d7429b24a3c",
+   "size": 11535,
+   "archive": "file",
+   "license": "Apache-2.0 (SeedVR2 by ByteDance Seed; ONNX export by Moonbox)",
+   "homepage": "https://huggingface.co/moonbox-dev/SeedVR2-3B-ONNX",
+   "files": [
+    {
+     "from": "LICENSE.txt",
+     "to": "licenses/seedvr2/LICENSE.txt"
     }
    ]
   }
@@ -1235,6 +1368,163 @@
    "requires": [
     "runtime:onnx",
     "yunet"
+   ]
+  },
+  {
+   "id": "restormer-motion",
+   "group": "sharp",
+   "name": {
+    "en": "Restormer: camera shake",
+    "th": "Restormer: ภาพสั่น"
+   },
+   "desc": {
+    "en": "Removes motion blur from camera shake or moving subjects. Faithful: it does not invent detail.",
+    "th": "ลบภาพเบลอจากกล้องสั่นหรือวัตถุเคลื่อนที่ ให้ผลตรงกับต้นฉบับ ไม่แต่งรายละเอียดขึ้นเอง"
+   },
+   "backend": "onnx",
+   "scales": [
+    1
+   ],
+   "onnx": {
+    "file": "models/onnx/restormer-motion-fp16.onnx",
+    "tile": 512,
+    "static_tile": false,
+    "precision": "fp16",
+    "input": "input",
+    "output": "output",
+    "range": "01"
+   },
+   "speed": 3,
+   "quality": 4,
+   "vram_min_mb": 900,
+   "vram_rec_mb": 1500,
+   "cost": {
+    "s_per_mp": 3.5,
+    "vram_mb": 900
+   },
+   "license": {
+    "name": "MIT",
+    "url": "https://github.com/swz30/Restormer/blob/main/LICENSE.md",
+    "commercial": true,
+    "redistribute": true,
+    "attribution": "Restormer by Syed Waqas Zamir et al. (CVPR 2022)"
+   },
+   "source": "https://github.com/swz30/Restormer",
+   "packages": [
+    "onnx-restormer-motion"
+   ],
+   "files": [
+    "models/onnx/restormer-motion-fp16.onnx"
+   ],
+   "content": [
+    "photo"
+   ],
+   "requires": [
+    "runtime:onnx"
+   ]
+  },
+  {
+   "id": "restormer-defocus",
+   "group": "sharp",
+   "name": {
+    "en": "Restormer: out of focus",
+    "th": "Restormer: โฟกัสพลาด"
+   },
+   "desc": {
+    "en": "Sharpens out-of-focus and soft photos. Faithful: it does not invent detail.",
+    "th": "ทำให้ภาพที่โฟกัสพลาดหรือภาพนุ่มคมขึ้น ให้ผลตรงกับต้นฉบับ ไม่แต่งรายละเอียดขึ้นเอง"
+   },
+   "backend": "onnx",
+   "scales": [
+    1
+   ],
+   "onnx": {
+    "file": "models/onnx/restormer-defocus-fp16.onnx",
+    "tile": 512,
+    "static_tile": false,
+    "precision": "fp16",
+    "input": "input",
+    "output": "output",
+    "range": "01"
+   },
+   "speed": 3,
+   "quality": 4,
+   "vram_min_mb": 900,
+   "vram_rec_mb": 1500,
+   "cost": {
+    "s_per_mp": 3.5,
+    "vram_mb": 900
+   },
+   "license": {
+    "name": "MIT",
+    "url": "https://github.com/swz30/Restormer/blob/main/LICENSE.md",
+    "commercial": true,
+    "redistribute": true,
+    "attribution": "Restormer by Syed Waqas Zamir et al. (CVPR 2022)"
+   },
+   "source": "https://github.com/swz30/Restormer",
+   "packages": [
+    "onnx-restormer-defocus"
+   ],
+   "files": [
+    "models/onnx/restormer-defocus-fp16.onnx"
+   ],
+   "content": [
+    "photo"
+   ],
+   "requires": [
+    "runtime:onnx"
+   ]
+  },
+  {
+   "id": "seedvr2-3b",
+   "group": "sharp",
+   "backend": "seedvr2",
+   "name": {
+    "en": "SeedVR2 3B: generative (Creative)",
+    "th": "SeedVR2 3B: AI วาดรายละเอียดใหม่ (Creative)"
+   },
+   "desc": {
+    "en": "Redraws lost detail for very blurry photos, text and faces. Looks real but may not match reality. About 1.5–2 minutes per photo; needs a GPU with 6 GB or more.",
+    "th": "วาดรายละเอียดที่หายไปขึ้นใหม่ สำหรับภาพที่เบลอมาก ตัวหนังสือ และใบหน้า ดูสมจริงแต่อาจไม่ตรงกับของจริง ใช้เวลาราว 1.5–2 นาทีต่อรูป ต้องใช้การ์ดจอ 6 GB ขึ้นไป"
+   },
+   "scales": [
+    1
+   ],
+   "speed": 1,
+   "quality": 5,
+   "vram_min_mb": 6000,
+   "vram_rec_mb": 8000,
+   "cost": {
+    "s_per_mp": 60.0,
+    "vram_mb": 6000
+   },
+   "license": {
+    "name": "Apache-2.0",
+    "url": "https://huggingface.co/moonbox-dev/SeedVR2-3B-ONNX",
+    "commercial": true,
+    "redistribute": true,
+    "attribution": "SeedVR2 by ByteDance Seed (Jianyi Wang et al.); ONNX export by Moonbox"
+   },
+   "source": "https://github.com/ByteDance-Seed/SeedVR",
+   "packages": [
+    "seedvr2-dit",
+    "seedvr2-dit-data",
+    "seedvr2-vae-enc",
+    "seedvr2-vae-dec",
+    "seedvr2-license"
+   ],
+   "files": [
+    "models/seedvr2-3b/dit.onnx",
+    "models/seedvr2-3b/dit.onnx.data",
+    "models/seedvr2-3b/vae_enc_first.onnx",
+    "models/seedvr2-3b/vae_dec_first.onnx"
+   ],
+   "content": [
+    "photo"
+   ],
+   "requires": [
+    "runtime:onnx"
    ]
   },
   {

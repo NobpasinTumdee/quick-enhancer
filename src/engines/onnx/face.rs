@@ -344,6 +344,12 @@ impl FaceRestorer {
     }
 }
 
+/// Faces in `img` with the YuNet detector alone (no restoration model needed).
+pub fn detect_faces(detector: &std::path::Path, img: &RgbImage, gpu: Option<u32>) -> Result<Vec<Face>, String> {
+    let det = session_for(detector, gpu, 2)?;
+    detect_with(&det, img)
+}
+
 fn detect_with(det: &LoadedSession, img: &RgbImage) -> Result<Vec<Face>, String> {
     let (input, r) = detector_input(img);
     let outs = det.run_all(input, DET_SIZE, DET_SIZE)?;

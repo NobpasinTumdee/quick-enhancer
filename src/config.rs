@@ -324,6 +324,9 @@ pub struct JobSettings {
     pub face_on: bool,
     pub face_model: String,
     pub face_strength: f32,
+    /// "Make sharp (AI)" (images only): replaces the upscale / restore stages when on.
+    pub sharp_on: bool,
+    pub sharp: crate::sharp::plan::SharpSettings,
     pub scale: ScaleMode,
     pub framegen: FrameGenMode,
     pub max_fps: u32,
@@ -582,6 +585,8 @@ impl Default for JobSettings {
             face_on: false,
             face_model: "gfpgan-1.4".into(),
             face_strength: 0.7,
+            sharp_on: false,
+            sharp: Default::default(),
             scene_detect: true,
             scene_threshold: 0.30,
             denoise: 0.0,

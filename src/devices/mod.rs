@@ -6,7 +6,7 @@ use ash::vk;
 
 use crate::config::ComputeDevice;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum GpuKind {
     Discrete,
     Integrated,
@@ -15,7 +15,7 @@ pub enum GpuKind {
     Other,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct GpuInfo {
     /// ncnn / Vulkan device index.
     pub index: u32,

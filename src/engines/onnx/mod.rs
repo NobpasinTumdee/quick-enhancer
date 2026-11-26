@@ -47,6 +47,13 @@ pub fn clear_cache() {
 }
 
 fn build(env: &runtime::Loaded, path: &Path, ep: Ep, threads: usize) -> Result<Session, String> {
+    build_with(env, path, ep, threads, false)
+}
+
+/// `lean`: for very large one-shot graphs (generative models in a worker process) — the CUDA
+/// arena grows only by what is asked for and cuDNN picks algorithms by heuristic, which keeps
+/// the peak VRAM close to what the graph needs.
+fn build_with(env: &runtime::Loaded, path: &Path, ep: Ep, threads: usize, lean: bool) -> Result<Session, String> {
     use ort::ep;
     let e = |x: &dyn std::fmt::Display| x.to_string();
     let mut b = Session::builder(&env.env)
@@ -65,9 +72,13 @@ fn build(env: &runtime::Loaded, path: &Path, ep: Ep, threads: usize) -> Result<S
                 .map_err(|x| e(&x))?;
         }
         Ep::Cuda(dev) => {
-            b = b
-                .with_execution_providers([ep::CUDA::default().with_device_id(dev).build().error_on_failure()])
-                .map_err(|x| e(&x))?;
+            let mut cuda = ep::CUDA::default().with_device_id(dev);
+            if lean {
+                cuda = cuda
+                    .with_arena_extend_strategy(ort::ep::ArenaExtendStrategy::SameAsRequested)
+                    .with_conv_algorithm_search(ep::cuda::ConvAlgorithmSearch::Heuristic);
+            }
+            b = b.with_execution_providers([cuda.build().error_on_failure()]).map_err(|x| e(&x))?;
         }
         Ep::Cpu => {
             b = b.with_intra_threads(threads.max(1)).map_err(|x| e(&x))?;
@@ -161,6 +172,50 @@ pub fn session_for(path: &Path, gpu: Option<u32>, threads: usize) -> Result<Arc<
     Err(crate::t!("onnx.session_failed", name = path.display(), error = short(&last)))
 }
 
+/// Load a session without caching it, with lean memory settings (see `build_with`), falling back
+/// along the EP chain like `session_for`. Used by worker processes for one-shot generative graphs.
+pub fn session_lean(path: &Path, gpu: Option<u32>) -> Result<Arc<LoadedSession>, String> {
+    let env = runtime::environment()?;
+    let info = runtime::gpu_info(gpu);
+    let chain = runtime::ep_chain(env.kind, info.as_ref(), &runtime::gpus());
+    let mut last = String::new();
+    for ep in chain.iter().filter(|e| e.is_gpu()) {
+        match build_with(env, path, *ep, 4, true) {
+            Ok(s) => {
+                let (input, output, half, fixed, extra_inputs, outputs) = describe(&s);
+                return Ok(Arc::new(LoadedSession {
+                    session: Mutex::new(s),
+                    ep: *ep,
+                    input,
+                    output,
+                    half,
+                    fixed,
+                    extra_inputs,
+                    outputs,
+                }));
+            }
+            Err(e) => {
+                tracing::warn!("ONNX session on {} failed: {e}", ep.label());
+                last = e;
+            }
+        }
+    }
+    if last.is_empty() {
+        last = crate::t!("onnx.needs_gpu");
+    }
+    Err(crate::t!("onnx.session_failed", name = path.display(), error = short(&last)))
+}
+
+/// One f32 output: (shape, data).
+pub type Output = (Vec<usize>, Vec<f32>);
+
+/// A named input tensor of any shape.
+pub enum Input {
+    F32(Vec<usize>, Vec<f32>),
+    I64(Vec<usize>, Vec<i64>),
+    I32(Vec<usize>, Vec<i32>),
+}
+
 pub(crate) fn short(s: &str) -> String {
     let s = s.lines().next().unwrap_or(s);
     if s.chars().count() > 240 {
@@ -182,6 +237,29 @@ impl LoadedSession {
     pub fn run_all(&self, data: Vec<f32>, w: u32, h: u32) -> Result<Vec<(String, Vec<f32>)>, String> {
         let names = self.outputs.clone();
         self.run_outputs(data, w, h, &[], &names)
+    }
+
+    /// Run with arbitrary named inputs; returns (shape, data) of the requested f32 outputs.
+    pub fn run_named(&self, inputs: Vec<(String, Input)>, names: &[&str]) -> Result<Vec<Output>, String> {
+        let e = |x: ort::Error| x.to_string();
+        let mut vals: Vec<(String, ort::value::DynValue)> = Vec::with_capacity(inputs.len());
+        for (n, i) in inputs {
+            let v = match i {
+                Input::F32(shape, d) => Tensor::from_array((shape, d)).map_err(e)?.into_dyn(),
+                Input::I64(shape, d) => Tensor::from_array((shape, d)).map_err(e)?.into_dyn(),
+                Input::I32(shape, d) => Tensor::from_array((shape, d)).map_err(e)?.into_dyn(),
+            };
+            vals.push((n, v));
+        }
+        let mut s = self.session.lock().map_err(|x| x.to_string())?;
+        let out = s.run(vals).map_err(e)?;
+        let mut res = Vec::with_capacity(names.len());
+        for n in names {
+            let o = &out[*n];
+            let (shape, v) = o.try_extract_tensor::<f32>().map_err(e)?;
+            res.push((shape.iter().map(|&d| d.max(0) as usize).collect(), v.to_vec()));
+        }
+        Ok(res)
     }
 
     fn run_outputs(

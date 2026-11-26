@@ -65,6 +65,11 @@ pub fn configure(base: &Path, pref: RuntimeKind, gpus: &[GpuInfo]) {
 }
 
 /// Messages for the user (EP fallbacks, runtime switches). Drained by the UI / job log.
+/// The preferred runtime from the settings (before it is loaded).
+pub fn preferred_kind() -> RuntimeKind {
+    CONFIG.lock().ok().and_then(|c| c.as_ref().map(|c| c.pref)).unwrap_or_default()
+}
+
 pub fn take_notices() -> Vec<String> {
     NOTICES.lock().map(|mut n| std::mem::take(&mut *n)).unwrap_or_default()
 }

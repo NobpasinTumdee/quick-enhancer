@@ -19,6 +19,7 @@ path = "src/main.rs"
 anyhow = "1.0.104"
 ash = { version = "0.38.0", default-features = false, features = ["loaded", "std"] }
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "std", "serde"] }
+crc32fast = "1.5.5"
 crossbeam-channel = "0.5.17"
 dirs = "7.0.0"
 eframe = { version = "0.37.0", default-features = false, features = ["wgpu", "default_fonts", "x11", "wayland"] }
@@ -70,3 +71,6 @@ opt-level = 2
 [profile.test]
 opt-level = 2
 
+
+[dev-dependencies]
+png = "0.18.1"
