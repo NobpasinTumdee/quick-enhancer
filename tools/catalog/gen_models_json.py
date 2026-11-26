@@ -158,6 +158,10 @@ for pid, name, file, sha, size in [
 ]:
     packages.append(file_pkg(pid, name, "2026.12", file, sha, size, "models/onnx/" + file, RESTORMER[0], RESTORMER[1],
                              url=REL2 + file))
+packages.append(file_pkg("restormer-license", "Restormer licence (MIT)", "2026.12", "Restormer-LICENSE.txt",
+                         "2b93776512924bc095ec5d97a79d76cf1ab401ae641d1ae1f46e94f1c53a2e59", 1090,
+                         "licenses/models/Restormer-LICENSE.txt", RESTORMER[0], RESTORMER[1],
+                         url=REL2 + "Restormer-LICENSE.txt"))
 
 SEEDVR2_DIR = "models/seedvr2-3b/"
 SEEDVR2_LIC = ("Apache-2.0 (SeedVR2 by ByteDance Seed; ONNX export by Moonbox)",
@@ -354,6 +358,11 @@ for name, desc, speed, quality, vmin, s in [
     models.append(ncnn(name, "interpolate", "ncnn_rife", T(label, label), desc, name, [2, 3, 4], speed, quality, vmin,
                        vmin * 2, s, RIFE, "https://github.com/TNTwise/rife-ncnn-vulkan", ["rife"],
                        [f"models/rife/{name}/flownet.param", f"models/rife/{name}/flownet.bin"], ["video"]))
+
+# The Restormer models also install the licence text (MIT asks for it to go with copies).
+for m in models:
+    if m["id"].startswith("restormer-"):
+        m["packages"].append("restormer-license")
 
 with open(sys.argv[1], "w", encoding="utf-8", newline="\n") as fh:
     json.dump(dict(schema=2, catalog_version="2026.12.1", update_url=REL2 + "models.json",
