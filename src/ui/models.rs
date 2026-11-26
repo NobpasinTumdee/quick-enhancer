@@ -130,6 +130,19 @@ impl ModelsUi {
         install::install_plan(&self.catalog, &self.tools, &self.snap, m, runtime, repair)
     }
 
+    /// One plan for several models (shared packages and the runtime once).
+    pub fn plan_many(&self, models: &[&ModelEntry], runtime: RuntimeKind, repair: bool) -> Vec<Component> {
+        let mut plan: Vec<Component> = Vec::new();
+        for m in models {
+            for p in self.plan(m, runtime, repair) {
+                if !plan.iter().any(|q| q.id == p.id) {
+                    plan.push(p);
+                }
+            }
+        }
+        plan
+    }
+
     /// Start downloading `packages` (for `models`, shown as "installing").
     pub fn start(&mut self, paths: &AppPaths, ctx: &egui::Context, packages: Vec<Component>, models: Vec<String>) {
         if packages.is_empty() || self.running() {
@@ -576,14 +589,8 @@ fn install_dialog(app: &mut App, ctx: &egui::Context) {
         return;
     };
     let extra: Vec<ModelEntry> = ask.extra.iter().filter_map(|id| app.models_ui.catalog.model(id).cloned()).collect();
-    let mut plan = app.models_ui.plan(&m, app.config.onnx_runtime, ask.repair);
-    for e in &extra {
-        for p in app.models_ui.plan(e, app.config.onnx_runtime, ask.repair) {
-            if !plan.iter().any(|q| q.id == p.id) {
-                plan.push(p);
-            }
-        }
-    }
+    let all: Vec<&ModelEntry> = std::iter::once(&m).chain(extra.iter()).collect();
+    let plan = app.models_ui.plan_many(&all, app.config.onnx_runtime, ask.repair);
     let fitv = fit::fit(&m, &app.env.gpus);
     let mut close = false;
     let mut go = false;
