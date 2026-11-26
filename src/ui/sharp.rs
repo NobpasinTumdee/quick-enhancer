@@ -87,7 +87,7 @@ impl SharpUi {
     }
 
     /// Start analysing `path` in the background (once per item).
-    fn ensure(&mut self, id: u64, path: PathBuf, detector: Option<PathBuf>, gpu: Option<u32>, ctx: &egui::Context) {
+    fn ensure(&mut self, id: u64, path: PathBuf, detector: Option<PathBuf>, ctx: &egui::Context) {
         if self.done.contains_key(&id) || self.pending.contains(&id) || self.errors.contains_key(&id) {
             return;
         }
@@ -95,14 +95,14 @@ impl SharpUi {
         let tx = self.tx.clone();
         let ctx = ctx.clone();
         let _ = std::thread::Builder::new().name("sharp-analysis".into()).spawn(move || {
-            let r = analyse_file(&path, detector.as_deref(), gpu);
+            let r = analyse_file(&path, detector.as_deref());
             let _ = tx.send((id, r));
             ctx.request_repaint();
         });
     }
 }
 
-fn analyse_file(path: &std::path::Path, detector: Option<&std::path::Path>, gpu: Option<u32>) -> Result<Analysed, String> {
+fn analyse_file(path: &std::path::Path, detector: Option<&std::path::Path>) -> Result<Analysed, String> {
     let img = crate::pipeline::image_job::load_rgb_alpha(path).map_err(|e| e.to_string())?.0;
     let report = crate::sharp::analysis::analyse(&img);
     let (w, h) = img.dimensions();
@@ -113,7 +113,9 @@ fn analyse_file(path: &std::path::Path, detector: Option<&std::path::Path>, gpu:
             let (dw, dh) = crate::engines::resize::fit_within(w, h, 1280, 1280);
             let small = crate::engines::resize::resize_rgb(&img, dw, dh, crate::engines::resize::ResizeKind::Lanczos3);
             let k = w as f32 / dw as f32;
-            crate::engines::onnx::face::detect_faces(det, &small, gpu)
+            // CPU: milliseconds on a small picture, and a DirectML session opened while the
+            // preview opens its own can fail ("DmlGraphFusionHelper ... 8000FFFF").
+            crate::engines::onnx::face::detect_faces(det, &small, None)
                 .map(|v| v.into_iter().map(|f| [f.bbox[0] * k, f.bbox[1] * k, f.bbox[2] * k, f.bbox[3] * k]).collect())
                 .unwrap_or_default()
         }
@@ -162,7 +164,7 @@ pub fn sharp_mode(app: &mut App, ui: &mut egui::Ui) {
             .model("yunet")
             .filter(|m| app.env.models.onnx_runtime && app.env.models.catalog_files_present(m))
             .and_then(|m| m.onnx.as_ref().map(|o| app.env.models.base.join(&o.file)));
-        app.sharp_ui.ensure(*id, info.path.clone(), det, gpu.as_ref().map(|g| g.index), &ctx);
+        app.sharp_ui.ensure(*id, info.path.clone(), det, &ctx);
     }
     let report = item.as_ref().and_then(|(id, _)| app.sharp_ui.report(*id).copied());
 

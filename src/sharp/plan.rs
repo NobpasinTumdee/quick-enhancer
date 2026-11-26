@@ -109,6 +109,10 @@ pub struct SharpSettings {
     /// Tile size for the deblur / generative models (0 = automatic).
     pub tile: u32,
     pub seed: u64,
+    /// The whole image's blur analysis, used instead of analysing the input. A preview region
+    /// is set up with it, so it gets the same preset and models as the full export.
+    #[serde(skip)]
+    pub analysis: Option<crate::sharp::analysis::BlurReport>,
 }
 
 impl Default for SharpSettings {
@@ -126,6 +130,7 @@ impl Default for SharpSettings {
             downscale: 0.0,
             tile: 0,
             seed: 42,
+            analysis: None,
         }
     }
 }

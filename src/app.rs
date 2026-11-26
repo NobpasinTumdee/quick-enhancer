@@ -903,9 +903,19 @@ impl App {
         let Some((id, info)) = self.selected_info() else {
             return;
         };
-        let settings = self.config.job(self.cur_settings());
-        // "Make sharp" previews a region automatically ("Process full image" renders it all).
+        let mut settings = self.config.job(self.cur_settings());
+        // "Make sharp" previews a region automatically ("Process full image" renders it all),
+        // once the whole image is analysed (its preset, and the default box on a face).
         let region = (settings.sharp_on && info.kind == MediaKind::Image).then(|| self.sharp_region(id, &info));
+        if region.is_some() {
+            match self.sharp_ui.report(id) {
+                Some(r) => settings.sharp.analysis = Some(*r),
+                None => {
+                    self.ws.preview_dirty = Some(Instant::now());
+                    return;
+                }
+            }
+        }
         let t_ms = match region {
             Some(r) => crate::sharp::region::key(r),
             None => (self.ws.scrub_time * 1000.0) as u64,
@@ -944,7 +954,8 @@ impl App {
         let Some((id, info)) = self.selected_info() else {
             return;
         };
-        let settings = self.config.job(self.cur_settings());
+        let mut settings = self.config.job(self.cur_settings());
+        settings.sharp.analysis = self.sharp_ui.report(id).copied();
         self.ws.last_preview = None;
         self.ws.player = None;
         self.ws.preview_error = None;

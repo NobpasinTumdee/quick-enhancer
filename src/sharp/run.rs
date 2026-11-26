@@ -94,7 +94,7 @@ impl SharpPlan {
         let cancel = ctx.cancel;
         let (w, h) = img.dimensions();
         let (tw, th) = self.out_size(w, h);
-        let blur = analysis::analyse(&img);
+        let blur = self.settings.analysis.unwrap_or_else(|| analysis::analyse(&img));
         let r = plan::resolve(&self.settings, &blur);
         let mut warnings = Vec::new();
         tracing::info!("make sharp: {blur:?} → {r:?}");
