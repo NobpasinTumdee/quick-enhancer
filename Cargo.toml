@@ -1,6 +1,6 @@
 [package]
 name = "quick-enhancer"
-version = "2.2.0"
+version = "2.3.0"
 edition = "2024"
 description = "Local image & video enhancement: AI upscaling, frame interpolation, sharpen/denoise"
 license = "MIT"

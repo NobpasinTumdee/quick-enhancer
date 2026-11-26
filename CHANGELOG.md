@@ -4,6 +4,38 @@ All notable changes to Quick Enhancer. Versions follow [Semantic Versioning](htt
 the version in `Cargo.toml` is the single source of truth (exe resources, installer, About page,
 update check).
 
+## [2.3.0] — 2026-11-27
+
+### Added
+- **Make sharp (AI)**: a new mode on the Image page for blurry photos.
+  - The app checks how blurry the picture is and says so in plain words (camera shake, out of
+    focus, slightly soft, small / low-res), suggests a preset and shows how much real detail is
+    left.
+  - Presets: Auto, Light blur, Strong blur, Camera shake, Out of focus, Old / low-res photo,
+    Portrait (faces).
+  - **Faithful**: Restormer removes motion or focus blur, the image is shrunk to the detail it
+    really has and rebuilt with RealPLKSR, then faces (GFPGAN / CodeFormer) and a light CAS.
+    Faithful only sharpens what is in the photo; 10–20 s per photo on a mid-range GPU.
+  - **Creative** (optional, Faithful ↔ Creative slider): the generative model **SeedVR2 3B**
+    redraws lost detail and is blended in. It needs a GPU with 6 GB or more and takes about
+    1.5–2 minutes per photo. It runs in a separate worker process, so running out of video
+    memory can't crash the app; it retries with smaller tiles / a smaller working size and then
+    explains what to do.
+  - Estimated time and "fits your PC" for the current settings; Advanced options for the deblur
+    and detail models, downscale, tile, seed, face strength and final sharpen.
+  - **Preview region**: the preview processes only a box (by default on the largest face) for
+    quick tries; **Faithful vs Creative** side by side; **Process full image**.
+  - Creative results say so: a notice next to the slider, "✦ AI-generated details" in History
+    and Outputs, and a note in the file's metadata ("Processed with generative AI by Quick
+    Enhancer").
+- AI models page: new group **Make blurry photos sharp** (Restormer motion, Restormer defocus,
+  SeedVR2 3B) with before / after sample links. **Install missing parts** installs everything the
+  mode needs in one dialog with the total size. None of these are in the starter pack.
+
+### Changed
+- The model catalog moved to schema 2 on the new `models-2026.12` release. Quick Enhancer 2.2
+  keeps using the unchanged catalog on `models-2026.11`.
+
 ## [2.2.0] — 2026-11-24
 
 ### Added
