@@ -796,6 +796,8 @@ undo_short = "เลิกทำ"
 redo_short = "ทำซ้ำ"
 
 [models]
+sample = "ก่อน / หลัง ↗"
+sample_tip = "เปิดภาพตัวอย่างที่ทำด้วยโมเดลนี้ (จากหน้า release ของโปรเจกต์)"
 group_sharp = "ทำให้ภาพเบลอชัดขึ้น"
 install_parts_title = "ติดตั้ง {n} ส่วน"
 title = "โมเดล AI"

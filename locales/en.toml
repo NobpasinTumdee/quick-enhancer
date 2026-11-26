@@ -796,6 +796,8 @@ undo_short = "Undo"
 redo_short = "Redo"
 
 [models]
+sample = "Before / after ↗"
+sample_tip = "Opens an example picture made with this model (from the project's release page)."
 group_sharp = "Make blurry photos sharp"
 install_parts_title = "Install {n} parts"
 title = "AI models"

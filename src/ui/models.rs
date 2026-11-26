@@ -436,6 +436,9 @@ fn model_row(app: &mut App, ui: &mut egui::Ui, id: &str) {
             ui.label(RichText::new(human_bytes(size)).small().weak());
             ui.hyperlink_to(RichText::new(&m.license.name).small(), &m.license.url)
                 .on_hover_text(&m.license.attribution);
+            if let Some(url) = &m.sample {
+                ui.hyperlink_to(RichText::new(t!("models.sample")).small(), url).on_hover_text(t!("models.sample_tip"));
+            }
             if m.needs_runtime() == Some(RuntimeNeed::Cuda) {
                 ui.label(RichText::new(t!("models.needs_cuda")).small().color(WARN));
             }

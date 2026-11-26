@@ -169,6 +169,9 @@ pub struct ModelEntry {
     pub requires: Vec<String>,
     #[serde(default)]
     pub hidden: bool,
+    /// Link to a before / after picture made with the model (schema 2).
+    #[serde(default)]
+    pub sample: Option<String>,
 }
 
 impl ModelEntry {

@@ -1421,7 +1421,8 @@
    ],
    "requires": [
     "runtime:onnx"
-   ]
+   ],
+   "sample": "https://github.com/NobpasinTumdee/quick-enhancer/releases/download/models-2026.12/sample-restormer-motion.jpg"
   },
   {
    "id": "restormer-defocus",
@@ -1474,7 +1475,8 @@
    ],
    "requires": [
     "runtime:onnx"
-   ]
+   ],
+   "sample": "https://github.com/NobpasinTumdee/quick-enhancer/releases/download/models-2026.12/sample-restormer-defocus.jpg"
   },
   {
    "id": "seedvr2-3b",
@@ -1525,7 +1527,8 @@
    ],
    "requires": [
     "runtime:onnx"
-   ]
+   ],
+   "sample": "https://github.com/NobpasinTumdee/quick-enhancer/releases/download/models-2026.12/sample-seedvr2-3b.jpg"
   },
   {
    "id": "codeformer",
