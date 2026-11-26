@@ -379,6 +379,9 @@ fn card(app: &mut App, ui: &mut egui::Ui, r: &OutputRecord, act: &mut Option<Act
     if r.entry.as_ref().is_some_and(|e| e.edited) {
         line = format!("✂ {} · {line}", t!("outputs.edited"));
     }
+    if r.entry.as_ref().is_some_and(|e| e.ai_generated) {
+        line = format!("✦ {} · {line}", t!("outputs.ai_generated"));
+    }
     child.add_sized(
         [CARD, 14.0],
         egui::Label::new(RichText::new(line).small().weak()).truncate(),
@@ -450,6 +453,9 @@ fn list(app: &mut App, ui: &mut egui::Ui, records: &[OutputRecord], act: &mut Op
                     };
                     if r.entry.as_ref().is_some_and(|e| e.edited) {
                         kind = format!("{kind} ✂");
+                    }
+                    if r.entry.as_ref().is_some_and(|e| e.ai_generated) {
+                        kind = format!("{kind} ✦");
                     }
                     ui.add_sized([TYPE_W, 18.0], egui::Label::new(kind).truncate());
                     let size = if r.exists { human_bytes(r.size) } else { t!("outputs.missing") };

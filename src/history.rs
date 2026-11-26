@@ -49,6 +49,8 @@ pub struct HistoryEntry {
     pub processing_secs: f64,
     /// Produced by the Editor page (trim / crop / join / rotate).
     pub edited: bool,
+    /// Made with a generative model ("AI-generated details").
+    pub ai_generated: bool,
 }
 
 impl Default for HistoryEntry {
@@ -68,6 +70,7 @@ impl Default for HistoryEntry {
             size_bytes: 0,
             processing_secs: 0.0,
             edited: false,
+            ai_generated: false,
         }
     }
 }

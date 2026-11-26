@@ -69,6 +69,8 @@ pub struct Workspace {
     pub preview_secs: f64,
     /// Dropped files of the wrong kind for this page (offered to the other page).
     pub rejected: Vec<PathBuf>,
+    /// "Make sharp" preview box per item (source pixels).
+    pub sharp_regions: std::collections::HashMap<u64, [u32; 4]>,
 }
 
 impl Workspace {
@@ -85,6 +87,7 @@ impl Workspace {
             scrub_time: 0.0,
             preview_secs: 0.0,
             rejected: Vec::new(),
+            sharp_regions: std::collections::HashMap::new(),
         }
     }
 
@@ -208,6 +211,8 @@ pub struct App {
     pub outputs: crate::outputs::OutputsState,
     pub tools_ui: crate::ui::tools::ToolsUi,
     pub models_ui: crate::ui::models::ModelsUi,
+    /// "Make sharp (AI)": blur analysis, thumbnails and the region picker state.
+    pub sharp_ui: crate::ui::sharp::SharpUi,
     pub wizard: crate::ui::wizard::Wizard,
     pub update_ui: crate::ui::update::UpdateUi,
     pub show_font_test: bool,
@@ -377,6 +382,7 @@ impl App {
             outputs,
             tools_ui: crate::ui::tools::ToolsUi::default(),
             models_ui,
+            sharp_ui: Default::default(),
             wizard: Default::default(),
             update_ui: crate::ui::update::UpdateUi::default(),
             show_font_test: start.font_test,
@@ -651,6 +657,7 @@ impl App {
                 size_bytes: std::fs::metadata(&output).map(|m| m.len()).unwrap_or(0),
                 processing_secs: 0.0,
                 edited: true,
+                ai_generated: false,
             };
             if let Err(e) = crate::history::History::append_to_file(&file, entry) {
                 tracing::warn!("writing history failed: {e}");
@@ -897,7 +904,12 @@ impl App {
             return;
         };
         let settings = self.config.job(self.cur_settings());
-        let t_ms = (self.ws.scrub_time * 1000.0) as u64;
+        // "Make sharp" previews a region automatically ("Process full image" renders it all).
+        let region = (settings.sharp_on && info.kind == MediaKind::Image).then(|| self.sharp_region(id, &info));
+        let t_ms = match region {
+            Some(r) => crate::sharp::region::key(r),
+            None => (self.ws.scrub_time * 1000.0) as u64,
+        };
         let key = (id, still_key(&settings), t_ms);
         if !force && self.ws.last_preview.as_ref() == Some(&key) {
             return;
@@ -905,14 +917,43 @@ impl App {
         self.ws.last_preview = Some(key);
         self.ws.player = None;
         self.ws.preview_error = None;
+        let kind = match region {
+            Some(rect) => PreviewKind::Region { rect, compare: false },
+            None => PreviewKind::Still {
+                time: self.ws.scrub_time,
+            },
+        };
         self.preview.request(PreviewRequest {
             item: id,
             info,
             settings,
-            kind: PreviewKind::Still {
-                time: self.ws.scrub_time,
-            },
+            kind,
         });
+    }
+
+    /// The item's "Make sharp" preview box (the default one until the user draws one).
+    pub fn sharp_region(&self, id: u64, info: &MediaInfo) -> [u32; 4] {
+        match self.ws.sharp_regions.get(&id) {
+            Some(r) => crate::sharp::region::clamp(*r, info.width, info.height),
+            None => self.sharp_ui.default_region(id, info),
+        }
+    }
+
+    /// "Make sharp": render the whole image (or Faithful vs Creative on the region).
+    pub fn request_sharp_preview(&mut self, full: bool, compare: bool) {
+        let Some((id, info)) = self.selected_info() else {
+            return;
+        };
+        let settings = self.config.job(self.cur_settings());
+        self.ws.last_preview = None;
+        self.ws.player = None;
+        self.ws.preview_error = None;
+        let kind = if full {
+            PreviewKind::Still { time: 0.0 }
+        } else {
+            PreviewKind::Region { rect: self.sharp_region(id, &info), compare }
+        };
+        self.preview.request(PreviewRequest { item: id, info, settings, kind });
     }
 
     pub fn request_sample(&mut self) {
@@ -1011,7 +1052,8 @@ impl App {
                                 .remove(&id)
                                 .map(|t| t.elapsed().as_secs_f64())
                                 .unwrap_or(0.0);
-                            self.record_history(id, &output, secs);
+                            let ai = note.contains(crate::sharp::meta::NOTE_MARK);
+                            self.record_history(id, &output, secs, ai);
                             if let Some(i) = self.item_mut(id) {
                                 i.status = ItemStatus::Done;
                                 i.output = Some(output);
@@ -1037,9 +1079,13 @@ impl App {
                     after,
                     note,
                     secs,
+                    labels,
                 } => {
                     if Some(item) == self.ws.selected {
-                        self.ws.canvas.set_images(ctx, &before, &after);
+                        if labels.is_some() {
+                            self.ws.canvas.mode = crate::preview::canvas::CompareMode::SideBySide;
+                        }
+                        self.ws.canvas.set_images_labeled(ctx, &before, &after, labels);
                         self.ws.preview_note = note;
                         self.ws.preview_secs = secs;
                         self.ws.player = None;
@@ -1143,7 +1189,7 @@ impl App {
     }
 
     /// Append a finished job to `history.json` (probing the output off the UI thread).
-    fn record_history(&mut self, id: u64, output: &Path, processing_secs: f64) {
+    fn record_history(&mut self, id: u64, output: &Path, processing_secs: f64, ai_generated: bool) {
         let Some(item) = self.item(id) else {
             return;
         };
@@ -1206,6 +1252,7 @@ impl App {
                     size_bytes: std::fs::metadata(&output).map(|m| m.len()).unwrap_or(0),
                     processing_secs,
                     edited: false,
+                    ai_generated,
                 };
                 if let Err(e) = crate::history::History::append_to_file(&file, entry) {
                     tracing::warn!("writing history failed: {e}");

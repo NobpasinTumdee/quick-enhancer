@@ -38,6 +38,14 @@ pub fn summary_line(app: &App) -> Option<String> {
     let info = app.selected_item()?.info.clone()?;
     let s = app.config.job(app.cur_settings());
     let env = &app.env;
+    if s.sharp_on && info.kind == MediaKind::Image {
+        let (w, h) = crate::sharp::plan::target_size(info.width, info.height, s.sharp.scale);
+        let preset = match (s.sharp.preset, app.sharp_ui.report(app.selected_item()?.id)) {
+            (crate::sharp::plan::Preset::Auto, Some(r)) => crate::sharp::plan::Preset::for_report(r),
+            (p, _) => p,
+        };
+        return Some(format!("{}×{} → {w}×{h} · {} · {}", info.width, info.height, t!("sharp.mode"), t!(preset.label_key())));
+    }
     let cpu = crate::devices::resolve(s.compute, &env.gpus).is_none();
     let b = choose_backend(s.profile, s.model.as_deref(), info.kind, &env.tools, &env.models, cpu).ok()?;
     let video = info.kind == MediaKind::Video;
@@ -157,19 +165,38 @@ fn image_mode(app: &mut App, ui: &mut egui::Ui) {
     if s.profile == Profile::NoAi {
         s.profile = Profile::Realistic;
     }
-    let restore = s.scale == ScaleMode::X1;
-    ui.horizontal(|ui| {
-        if ui.selectable_label(!restore, RichText::new(t!("studio.mode_upscale")).strong()).clicked() && restore {
-            s.scale = ScaleMode::X2;
+    let sharp = s.sharp_on;
+    let restore = s.scale == ScaleMode::X1 && !sharp;
+    ui.horizontal_wrapped(|ui| {
+        if ui
+            .selectable_label(!restore && !sharp, RichText::new(t!("studio.mode_upscale")).strong())
+            .clicked()
+        {
+            s.sharp_on = false;
+            if s.scale == ScaleMode::X1 {
+                s.scale = ScaleMode::X2;
+            }
         }
         if ui
             .selectable_label(restore, RichText::new(t!("studio.mode_restore")).strong())
             .on_hover_text(t!("studio.mode_restore_tip"))
             .clicked()
         {
+            s.sharp_on = false;
             s.scale = ScaleMode::X1;
         }
+        if ui
+            .selectable_label(sharp, RichText::new(t!("sharp.mode")).strong())
+            .on_hover_text(t!("sharp.mode_tip"))
+            .clicked()
+        {
+            s.sharp_on = true;
+        }
     });
+    if s.sharp_on {
+        crate::ui::sharp::sharp_mode(app, ui);
+        return;
+    }
     if s.scale == ScaleMode::X1 {
         egui::Frame::group(ui.style()).show(ui, |ui| {
             ui.set_width(ui.available_width());
@@ -290,10 +317,13 @@ pub fn image_panel(app: &mut App, ui: &mut egui::Ui) {
                     .id_salt("i-mode")
                     .default_open(true)
                     .show(ui, |ui| image_mode(app, ui));
-                egui::CollapsingHeader::new(RichText::new(t!("studio.sec_clarity")).strong())
-                    .id_salt("i-clarity")
-                    .default_open(true)
-                    .show(ui, |ui| image_clarity(app, ui));
+                // "Make sharp" has its own light sharpen step.
+                if !app.cur_settings().sharp_on {
+                    egui::CollapsingHeader::new(RichText::new(t!("studio.sec_clarity")).strong())
+                        .id_salt("i-clarity")
+                        .default_open(true)
+                        .show(ui, |ui| image_clarity(app, ui));
+                }
                 output(app, ui);
                 crate::ui::perf::page_resources(app, ui);
             });
