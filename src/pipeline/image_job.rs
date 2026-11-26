@@ -127,13 +127,21 @@ pub fn run_image(
         let _ = std::fs::remove_file(&part);
         return Err(e);
     }
+    let generative = plan.sharp_report.lock().ok().and_then(|r| r.as_ref().map(|r| r.generative)).unwrap_or(false);
+    if generative {
+        crate::sharp::meta::mark_file(&part);
+    }
     if spec.output.exists() {
         std::fs::remove_file(&spec.output)?;
     }
     std::fs::rename(&part, &spec.output)?;
     progress.frames(1);
     let mut note = plan.describe();
-    for w in plan.warnings {
+    if generative {
+        note = format!("{} {} · {note}", crate::sharp::meta::NOTE_MARK, crate::t!("outputs.ai_generated"));
+    }
+    let sharp_warnings = plan.sharp_report.lock().ok().and_then(|r| r.as_ref().map(|r| r.warnings.clone())).unwrap_or_default();
+    for w in plan.warnings.iter().chain(sharp_warnings.iter()) {
         note += &format!(" · ⚠ {w}");
     }
     Ok(JobOutcome::Done {

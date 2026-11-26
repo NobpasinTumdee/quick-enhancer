@@ -10,6 +10,7 @@ pub mod profiles;
 pub mod queue;
 pub mod settings;
 pub mod settings_page;
+pub mod sharp;
 pub mod setup;
 pub mod studio;
 pub mod tools;

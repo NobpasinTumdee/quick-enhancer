@@ -78,6 +78,8 @@ pub struct PreviewCanvas {
     after: Option<Tex>,
     /// Output image size (the shared coordinate space).
     size: Vec2,
+    /// Captions for the two sides (`None` = Original / Enhanced).
+    labels: Option<(String, String)>,
 }
 
 impl PreviewCanvas {
@@ -100,7 +102,20 @@ impl PreviewCanvas {
         self.after = None;
     }
 
+    /// Like `set_images`, with captions for the two sides (e.g. Faithful / Creative).
+    pub fn set_images_labeled(
+        &mut self,
+        ctx: &egui::Context,
+        before: &RgbImage,
+        after: &RgbImage,
+        labels: Option<(String, String)>,
+    ) {
+        self.set_images(ctx, before, after);
+        self.labels = labels;
+    }
+
     pub fn set_images(&mut self, ctx: &egui::Context, before: &RgbImage, after: &RgbImage) {
+        self.labels = None;
         let max_side = ctx.input(|i| i.max_texture_side).max(2048);
         let new_size = Vec2::new(after.width() as f32, after.height() as f32);
         if new_size != self.size {
@@ -228,8 +243,12 @@ impl PreviewCanvas {
             t.update_filter(zoom * size.x / t.px[0] as f32);
         }
         let res = |t: &Option<Tex>| t.as_ref().map(|t| format!("{}x{}", t.px[0], t.px[1])).unwrap_or_default();
-        let orig_label = format!("{} · {}", crate::t!("preview.original"), res(&self.before));
-        let enh_label = format!("{} · {}", crate::t!("preview.enhanced"), res(&self.after));
+        let (orig_name, enh_name) = self
+            .labels
+            .clone()
+            .unwrap_or_else(|| (crate::t!("preview.original"), crate::t!("preview.enhanced")));
+        let orig_label = format!("{orig_name} · {}", res(&self.before));
+        let enh_label = format!("{enh_name} · {}", res(&self.after));
         let before = self.before.as_ref().expect("checked").handle.id();
         let after = self.after.as_ref().expect("checked").handle.id();
         let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));

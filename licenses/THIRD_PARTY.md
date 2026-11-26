@@ -117,7 +117,21 @@ YuNet face detector (2023mar) — Shiqi Yu et al., OpenCV Zoo,
 https://github.com/opencv/opencv_zoo/tree/main/models/face_detection_yunet
   License:  MIT. Unchanged copy.
 
-The models release also contains MODELS-LICENSES.md and the full license texts.
+Restormer (motion deblurring, defocus deblurring) — Syed Waqas Zamir et al.,
+https://github.com/swz30/Restormer
+  License:  MIT (copied to licenses/models/Restormer-LICENSE.txt on install).
+            Converted to ONNX (fp16 weights); hosted on the models-2026.12
+            release.
+
+SeedVR2-3B (generative restoration, "Creative") — ByteDance Seed (Jianyi Wang
+et al.), https://github.com/ByteDance-Seed/SeedVR; ONNX export (int8 DiT) by
+Moonbox, https://huggingface.co/moonbox-dev/SeedVR2-3B-ONNX
+  License:  Apache-2.0 (copied to licenses/seedvr2/LICENSE.txt on install).
+            Downloaded from Hugging Face at a pinned revision, not hosted by
+            this project. Its results redraw detail: the app marks them as
+            "AI-generated details" (History, Outputs and the file's metadata).
+
+The models releases also contain MODELS-LICENSES.md and the full license texts.
 Images and videos you make with these models are yours; the licenses above
 govern the model files (CodeFormer: not for commercial use).
 

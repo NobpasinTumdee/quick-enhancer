@@ -32,6 +32,8 @@ pub enum Filter {
 #[derive(Clone)]
 pub struct InstallAsk {
     pub model_id: String,
+    /// More models installed together with `model_id` ("Install missing parts").
+    pub extra: Vec<String>,
     pub repair: bool,
     accept_nc: bool,
 }
@@ -107,7 +109,19 @@ impl ModelsUi {
     pub fn request_install(&mut self, id: &str, repair: bool) {
         self.ask = Some(InstallAsk {
             model_id: id.to_string(),
+            extra: Vec::new(),
             repair,
+            accept_nc: false,
+        });
+    }
+
+    /// Ask to install several models in one go (one list, one total size).
+    pub fn request_install_many(&mut self, ids: &[String]) {
+        let Some((first, rest)) = ids.split_first() else { return };
+        self.ask = Some(InstallAsk {
+            model_id: first.clone(),
+            extra: rest.to_vec(),
+            repair: false,
             accept_nc: false,
         });
     }
@@ -422,6 +436,9 @@ fn model_row(app: &mut App, ui: &mut egui::Ui, id: &str) {
             ui.label(RichText::new(human_bytes(size)).small().weak());
             ui.hyperlink_to(RichText::new(&m.license.name).small(), &m.license.url)
                 .on_hover_text(&m.license.attribution);
+            if let Some(url) = &m.sample {
+                ui.hyperlink_to(RichText::new(t!("models.sample")).small(), url).on_hover_text(t!("models.sample_tip"));
+            }
             if m.needs_runtime() == Some(RuntimeNeed::Cuda) {
                 ui.label(RichText::new(t!("models.needs_cuda")).small().color(WARN));
             }
@@ -558,16 +575,35 @@ fn install_dialog(app: &mut App, ctx: &egui::Context) {
         app.models_ui.ask = None;
         return;
     };
-    let plan = app.models_ui.plan(&m, app.config.onnx_runtime, ask.repair);
+    let extra: Vec<ModelEntry> = ask.extra.iter().filter_map(|id| app.models_ui.catalog.model(id).cloned()).collect();
+    let mut plan = app.models_ui.plan(&m, app.config.onnx_runtime, ask.repair);
+    for e in &extra {
+        for p in app.models_ui.plan(e, app.config.onnx_runtime, ask.repair) {
+            if !plan.iter().any(|q| q.id == p.id) {
+                plan.push(p);
+            }
+        }
+    }
     let fitv = fit::fit(&m, &app.env.gpus);
     let mut close = false;
     let mut go = false;
-    egui::Window::new(t!("models.install_title", name = m.name.get()))
+    let title = if extra.is_empty() {
+        t!("models.install_title", name = m.name.get())
+    } else {
+        t!("models.install_parts_title", n = extra.len() + 1)
+    };
+    egui::Window::new(title)
         .collapsible(false)
         .resizable(false)
         .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
         .show(ctx, |ui| {
             ui.set_max_width(520.0);
+            if !extra.is_empty() {
+                for e in std::iter::once(&m).chain(extra.iter()) {
+                    ui.label(RichText::new(format!("• {}", e.name.get())).strong());
+                }
+                ui.separator();
+            }
             ui.label(m.desc.get());
             ui.label(
                 RichText::new(format!(
@@ -640,7 +676,8 @@ fn install_dialog(app: &mut App, ctx: &egui::Context) {
         if plan.is_empty() {
             app.models_ui.rescan(&app.paths);
         } else {
-            app.models_ui.start(&app.paths, &ctx2, plan, vec![m.id.clone()]);
+            let ids = std::iter::once(m.id.clone()).chain(extra.iter().map(|e| e.id.clone())).collect();
+            app.models_ui.start(&app.paths, &ctx2, plan, ids);
         }
         app.models_ui.ask = None;
     } else if close {

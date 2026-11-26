@@ -50,6 +50,10 @@ pub struct StagePlan {
     tile: AtomicU32,
     pub pool: Arc<rayon::ThreadPool>,
     pub warnings: Vec<String>,
+    /// "Make sharp (AI)" (images): replaces restore / upscale / post-processing.
+    pub sharp: Option<crate::sharp::run::SharpPlan>,
+    /// What the last `process_still` did in sharp mode.
+    pub sharp_report: std::sync::Mutex<Option<crate::sharp::run::SharpReport>>,
 }
 
 impl StagePlan {
@@ -66,12 +70,24 @@ impl StagePlan {
         } else if cpu_only && s.compute == ComputeDevice::Auto && !env.gpus.is_empty() {
             warnings.push(crate::t!("warn.no_gpu"));
         }
-        let choice = choose_backend(s.profile, s.model.as_deref(), info.kind, &env.tools, &env.models, cpu_only)
-            .map_err(PipelineError::Setup)?;
+        let sharp_mode = s.sharp_on && info.kind == MediaKind::Image;
+        // "Make sharp" brings its own models; the page's upscaler is not used (or required).
+        let choice = if sharp_mode {
+            crate::engines::BackendChoice { backend: UpscaleBackend::Lanczos, warning: None }
+        } else {
+            choose_backend(s.profile, s.model.as_deref(), info.kind, &env.tools, &env.models, cpu_only)
+                .map_err(PipelineError::Setup)?
+        };
         if let Some(w) = choice.warning {
             warnings.push(w);
         }
-        let restore = if s.restore_on {
+        let sharp = if sharp_mode {
+            let g = gpu.and_then(|g| env.gpus.iter().find(|x| x.index == g.index));
+            Some(crate::sharp::run::SharpPlan::build(env, &s.sharp, s.sharp.scale, g).map_err(PipelineError::Setup)?)
+        } else {
+            None
+        };
+        let restore = if s.restore_on && !sharp_mode {
             let r = crate::engines::restore_backend(&s.restore_model, &env.tools, &env.models)
                 .map_err(PipelineError::Setup)?;
             if cpu_only {
@@ -81,7 +97,23 @@ impl StagePlan {
         } else {
             None
         };
-        let faces = if s.face_on {
+        let faces = if sharp_mode {
+            // Faces are part of the mode: on by its toggle, skipped (with a note) when no face
+            // model is installed.
+            if s.sharp.fix_faces {
+                match sharp_face_model(&s.face_model, env)
+                    .and_then(|id| crate::engines::face_backend(&id, s.sharp.face_strength, &env.models))
+                {
+                    Ok(f) => Some(Arc::new(f)),
+                    Err(e) => {
+                        warnings.push(crate::t!("sharp.faces_skipped", error = e));
+                        None
+                    }
+                }
+            } else {
+                None
+            }
+        } else if s.face_on {
             let f = crate::engines::face_backend(&s.face_model, s.face_strength, &env.models)
                 .map_err(PipelineError::Setup)?;
             if cpu_only {
@@ -95,10 +127,16 @@ impl StagePlan {
             None
         };
         let even = info.kind == MediaKind::Video;
+        let scale_mode = match (sharp_mode, s.sharp.scale) {
+            (false, _) => s.scale,
+            (true, 4) => crate::config::ScaleMode::X4,
+            (true, 2) => crate::config::ScaleMode::X2,
+            (true, _) => crate::config::ScaleMode::X1,
+        };
         let scale = plan_scale(
             info.width,
             info.height,
-            s.scale,
+            scale_mode,
             &choice.backend.native_scales(),
             even,
         );
@@ -134,6 +172,8 @@ impl StagePlan {
             tile: AtomicU32::new(tile),
             pool: Arc::new(pool),
             warnings,
+            sharp,
+            sharp_report: std::sync::Mutex::new(None),
         })
     }
 
@@ -308,6 +348,14 @@ impl StagePlan {
         work: &Path,
         cancel: &CancelToken,
     ) -> Result<RgbImage, PipelineError> {
+        if let Some(sp) = &self.sharp {
+            let ctx = self.engine_ctx(cancel);
+            let (out, report) = sp.process(img, &ctx, work, self.faces.as_deref())?;
+            if let Ok(mut r) = self.sharp_report.lock() {
+                *r = Some(report);
+            }
+            return Ok(out);
+        }
         let img = self.pre_stage(img, cancel)?;
         if cancel.is_cancelled() {
             return Err(PipelineError::Cancelled);
@@ -344,6 +392,9 @@ impl StagePlan {
     }
 
     pub fn describe(&self) -> String {
+        if self.sharp.is_some() {
+            return self.describe_sharp();
+        }
         let mut parts = vec![format!(
             "{}x{} → {}x{} · {}",
             self.scale.src_w,
@@ -363,10 +414,47 @@ impl StagePlan {
         }
         parts.join(" · ")
     }
+
+    fn describe_sharp(&self) -> String {
+        let r = self.sharp_report.lock().ok().and_then(|r| r.clone());
+        let mut parts = vec![crate::t!("sharp.mode")];
+        if let Some(r) = r {
+            parts.push(crate::t!(r.resolved.preset.label_key()));
+            if let Some(d) = &r.resolved.deblur {
+                parts.push(d.clone());
+            }
+            parts.push(format!("↓{:.2}x", r.downscale));
+            parts.push(r.resolved.sr_model.clone());
+            if r.generative {
+                parts.push(format!("{} {:.0}%", crate::sharp::plan::GENERATIVE, r.resolved.creative * 100.0));
+            }
+        }
+        if let Some(f) = &self.faces {
+            parts.push(format!("+ {}", f.name));
+        }
+        parts.join(" · ")
+    }
 }
 
 /// Measured PNG size / raw RGB size of real frames (EMA, in 1/10000), 0 = nothing yet.
 static PNG_RATIO: AtomicU32 = AtomicU32::new(0);
+
+/// Face model for "Make sharp": the chosen one when installed, else any installed face model
+/// (GFPGAN first).
+fn sharp_face_model(chosen: &str, env: &Env) -> Result<String, String> {
+    let installed = |id: &str| {
+        env.models
+            .catalog
+            .model(id)
+            .is_some_and(|m| m.group == crate::models::Group::Face && env.models.catalog_files_present(m))
+    };
+    for id in [chosen, "gfpgan-1.4", "codeformer"] {
+        if installed(id) {
+            return Ok(id.to_string());
+        }
+    }
+    Err(crate::t!("sharp.no_face_model"))
+}
 
 /// PNG compression ratio measured on real frames written so far (feeds the temp estimate).
 pub fn png_ratio() -> Option<f64> {

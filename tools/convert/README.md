@@ -51,6 +51,17 @@ Weights are the original releases listed in `licenses/THIRD_PARTY.md`.
 | `esrgan-nomos2-4x-ncnn.zip` | `to_ncnn.py 4xNomos2_otf_esrgan.pth DIR 4xNomos2_otf_esrgan`, zip the `.param` and `.bin` |
 | `yunet-2023mar.onnx` | unchanged copy of OpenCV Zoo's `face_detection_yunet_2023mar.onnx` |
 
+## `models-2026.12` ("Make sharp (AI)")
+
+| Published file | Commands |
+|---|---|
+| `restormer-motion-fp16.onnx` | `export_onnx.py motion_deblurring.pth fp32.onnx` (dynamic), then `to_fp16.py fp32.onnx OUT` |
+| `restormer-defocus-fp16.onnx` | `export_onnx.py single_image_defocus_deblurring.pth fp32.onnx` (dynamic), then `to_fp16.py fp32.onnx OUT` |
+
+The weights are the official Restormer v1.0 release files (MIT). `compare.py` gives 71–72 dB for
+both. SeedVR2-3B is not converted by us: the app downloads Moonbox's int8 ONNX graphs unchanged
+from a pinned Hugging Face revision (see `docs/DEBLUR_EVAL.md`).
+
 With the pinned versions above, the DAT2 and SCUNet recipes reproduce the published files byte
 for byte (checked 2026-11-23); the others depend on the exporter's node naming and may differ in
 bytes but not in output.

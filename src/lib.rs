@@ -22,5 +22,7 @@ pub mod pipeline;
 pub mod preview;
 pub mod profiles;
 pub mod resources;
+pub mod sharp;
+pub mod worker;
 pub mod ui;
 pub mod util;

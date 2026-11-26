@@ -23,3 +23,7 @@
 /licenses/onnxruntime/
 /licenses/onnxruntime-cuda/
 /licenses/realcugan/
+/licenses/seedvr2/
+/licenses/vcruntime/
+# Task prompts kept next to the code while working (not part of the project)
+quick_enhancer_*_prompt.md

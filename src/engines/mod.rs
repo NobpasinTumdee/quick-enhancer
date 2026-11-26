@@ -393,7 +393,8 @@ pub fn backend_for_model(
                 .onnx
                 .as_ref()
                 .ok_or_else(|| crate::t!("engine.not_an_upscaler", name = m.name.get()))?;
-            if m.group != crate::models::Group::Upscale && m.group != crate::models::Group::Restore {
+            use crate::models::Group;
+            if !matches!(m.group, Group::Upscale | Group::Restore | Group::Sharp) {
                 return Err(crate::t!("engine.not_an_upscaler", name = m.name.get()));
             }
             Ok(Arc::new(onnx::OnnxUpscaler::from_catalog(
@@ -403,7 +404,7 @@ pub fn backend_for_model(
                 m.max_scale(),
             )))
         }
-        Backend::NcnnRife => Err(crate::t!("engine.not_an_upscaler", name = m.name.get())),
+        Backend::NcnnRife | Backend::Seedvr2 => Err(crate::t!("engine.not_an_upscaler", name = m.name.get())),
     }
 }
 

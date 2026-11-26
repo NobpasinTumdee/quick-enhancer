@@ -409,3 +409,51 @@ Feasibility study and approved choices: `docs/FEASIBILITY_v2.2.md`. One commit p
 * **Build:** GNU toolchain (WinLibs) kept; `ort` is `load-dynamic`, so no import library is
   needed; libgcc / winpthread are linked statically and `scripts/release.ps1` fails if the exe
   imports a MinGW DLL.
+
+## v2.3 decisions (Quick Enhancer 2.3: "Make sharp (AI)")
+
+The evaluation behind these choices (candidates, LPIPS / PSNR numbers, timings, licences) is in
+[docs/DEBLUR_EVAL.md](docs/DEBLUR_EVAL.md).
+
+* **Where:** a third mode on the Image page, next to Upscale and Restore at original size. Images
+  only; video is unchanged. One code path: `StagePlan::process_still` runs `SharpPlan::process`
+  for the preview, the region preview and the export.
+* **Pipeline:** blur analysis → deblur (Restormer motion or defocus, by blur type) → smart
+  downscale to the effective sharp resolution (capped per preset: Portrait / Light 2.5, Old photo
+  2.0, else 4.0) → RealPLKSR Nomos2 4x back up → target size (original / 2x / 4x) → optional
+  generative pass blended in by the Faithful ↔ Creative amount → faces (GFPGAN, or CodeFormer
+  when chosen) → light CAS.
+* **Blur analysis** is pure Rust: the sharp factor is the smallest downscale that loses < 10 %
+  of the gradient energy after a round trip; the motion score compares directional gradient
+  energy. Kinds: sharp / light / strong / motion / low-res (under 0.6 MP).
+* **Faithful by default, Creative on request:** the faithful chain cut LPIPS from 0.412 to 0.254
+  across the test set; 50 % SeedVR2 gave 0.246 overall and was best on defocus and low-res, but
+  worse on motion and JPEG-damaged blur. So Auto uses 50 % only for Strong blur / Out of focus /
+  Old photo / Portrait, and 0 % for Light blur and Camera shake. The generative model gets the
+  original image, except after motion deblur (the defocus model's overshoot hurt it).
+* **Generative model: SeedVR2-3B** (Moonbox ONNX int8 export, Apache-2.0), one image = one frame.
+  Ported from Moonbox's `pipeline.py` (windows, RoPE inputs, tiled VAE with linear-ramp blending)
+  and checked against its numbers. A colour fix (`out − blur(out) + blur(ref)`, σ 8) removes its
+  warm shift. On an RTX 5060 Ti (DirectML): about 90 s at 1 MP, 115 s at 2 MP with 256 px VAE
+  tiles, peak +5.9 GB VRAM. The working size is capped at 2.1 MP (1 MP on GPUs with ≤ 7 GB).
+  The 2.2 "SeedVR2 dropped" decision was about video; a single still at ≤ 2 MP fits.
+* **Worker process:** the generative phases (encode, restore, decode) each run in
+  `QuickEnhancer.exe --worker <task.json>` so a driver-level out-of-memory or crash can't take
+  the app down, and memory is returned to the OS between phases. The protocol is one JSON task
+  file in, lines on stdout out (`progress`, `error`, `oom`, `done`). Out-of-memory in the restore
+  phase halves the working size; elsewhere the tile shrinks (256 → 192 → 128), then a clear
+  message suggests Faithful.
+* **Honesty about generative output:** the notice next to the slider, a "✦ AI-generated details"
+  mark in History and Outputs, and a note in the file (PNG `tEXt` Comment / JPEG `COM`:
+  "Processed with generative AI by Quick Enhancer").
+* **Preview region:** the preview processes a box (default 512 px around the largest face, else
+  the centre), using the whole image's analysis so the box gets the same preset and models as
+  the export. Faithful vs Creative side by side and Process full image are buttons.
+* **Hosting:** Restormer ONNX fp16 files (MIT) and the schema 2 catalog are on the
+  `models-2026.12` release (`--latest=false`); SeedVR2 (3.56 GB weights, over GitHub's 2 GB
+  asset limit) downloads from Hugging Face at a pinned revision with SHA-256 checks. The catalog
+  schema went to 2 (new group `sharp`, backend `seedvr2`, `sample` links); 2.2 keeps reading the
+  unchanged schema 1 catalog on `models-2026.11`.
+* **Not used:** NAFNet (rings on anything but motion blur), MPRNet (non-commercial), OSEDiff
+  (needs the withdrawn Stable Diffusion 2.1 base and a tagger, garbles text, changes faces),
+  DAT2 4x as the detail model (slower and worse than RealPLKSR here), SUPIR (not evaluated).

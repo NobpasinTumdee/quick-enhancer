@@ -16,7 +16,9 @@ use crate::net::tools::{Component, ToolsManifest};
 
 pub const EMBEDDED_CATALOG: &str = include_str!("../../models.json");
 /// Catalog schema this build understands. A cached catalog with another schema is ignored.
-pub const SCHEMA: u32 = 1;
+/// 2 (v2.3): the `sharp` group and the `seedvr2` backend. Older apps keep reading the schema-1
+/// catalog of the `models-2026.11` release, which stays unchanged.
+pub const SCHEMA: u32 = 2;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Default)]
 pub struct Text {
@@ -44,18 +46,21 @@ pub enum Group {
     Restore,
     Face,
     Interpolate,
+    /// "Make sharp (AI)": deblur and generative restoration models.
+    Sharp,
     /// Support models (face detector); not shown on their own.
     Helper,
 }
 
 impl Group {
-    pub const SHOWN: [Group; 4] = [Group::Upscale, Group::Restore, Group::Face, Group::Interpolate];
+    pub const SHOWN: [Group; 5] = [Group::Upscale, Group::Restore, Group::Face, Group::Sharp, Group::Interpolate];
     pub fn label_key(self) -> &'static str {
         match self {
             Group::Upscale => "models.group_upscale",
             Group::Restore => "models.group_restore",
             Group::Face => "models.group_face",
             Group::Interpolate => "models.group_interpolate",
+            Group::Sharp => "models.group_sharp",
             Group::Helper => "models.group_helper",
         }
     }
@@ -68,6 +73,9 @@ pub enum Backend {
     NcnnRealcugan,
     NcnnRife,
     Onnx,
+    /// SeedVR2 generative restoration: several ONNX graphs run by `crate::sharp::seedvr2` in
+    /// worker processes (no single `onnx` spec).
+    Seedvr2,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
@@ -161,6 +169,9 @@ pub struct ModelEntry {
     pub requires: Vec<String>,
     #[serde(default)]
     pub hidden: bool,
+    /// Link to a before / after picture made with the model (schema 2).
+    #[serde(default)]
+    pub sample: Option<String>,
 }
 
 impl ModelEntry {
@@ -317,7 +328,12 @@ impl Catalog {
                 (_, Some(_)) => return bad(format!("{}: onnx spec on an ncnn model", m.id)),
                 _ => {}
             }
-            if m.backend != Backend::Onnx && m.ncnn_name.is_none() {
+            if m.backend == Backend::Seedvr2 && (m.needs_runtime().is_none() || m.group != Group::Sharp) {
+                return bad(format!("{}: generative model must be in the sharp group and require a runtime", m.id));
+            }
+            if matches!(m.backend, Backend::NcnnRealesrgan | Backend::NcnnRealcugan | Backend::NcnnRife)
+                && m.ncnn_name.is_none()
+            {
                 return bad(format!("{}: ncnn model without ncnn_name", m.id));
             }
             if m.backend == Backend::Onnx && m.needs_runtime().is_none() {
@@ -420,6 +436,42 @@ mod tests {
                 assert!(covered, "{}: no package writes {f}", m.id);
             }
         }
+    }
+
+    #[test]
+    fn make_sharp_group() {
+        let c = Catalog::embedded();
+        let sharp: Vec<&ModelEntry> = c.models.iter().filter(|m| m.group == Group::Sharp).collect();
+        let ids: Vec<&str> = sharp.iter().map(|m| m.id.as_str()).collect();
+        for id in crate::sharp::run::model_ids().iter().filter(|i| **i != crate::sharp::plan::FAITHFUL_SR) {
+            assert!(ids.contains(id), "{id} missing from the sharp group: {ids:?}");
+        }
+        assert!(Group::SHOWN.contains(&Group::Sharp));
+        for m in &sharp {
+            assert!(m.license.commercial && m.license.redistribute, "{}", m.id);
+            for p in &m.packages {
+                let p = c.package(p).expect("package");
+                // Our files live on the v2.3 models release; SeedVR2 on a pinned upstream revision.
+                assert!(
+                    p.url.contains("/releases/download/models-2026.12/") || p.url.contains("/resolve/e2a111d5"),
+                    "{}",
+                    p.url
+                );
+            }
+        }
+        let generative = c.model(crate::sharp::plan::GENERATIVE).unwrap();
+        assert_eq!(generative.backend, Backend::Seedvr2);
+        assert!(generative.packages.iter().filter_map(|p| c.package(p)).map(|p| p.size).sum::<u64>() > 4_000_000_000);
+        // Not part of the first-run starter pack.
+        let starter: Vec<&str> = crate::ui::wizard::options().into_iter().flat_map(|o| o.packages).collect();
+        for m in &sharp {
+            for p in &m.packages {
+                assert!(!starter.contains(&p.as_str()), "{p} in the starter pack");
+            }
+        }
+        // The catalog lives on the new release; 2.2 keeps the schema-1 file on models-2026.11.
+        assert_eq!(c.schema, 2);
+        assert!(c.update_url.contains("/models-2026.12/"));
     }
 
     #[test]

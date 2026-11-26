@@ -2,14 +2,20 @@
 
 Run from the repository root:  python tools/catalog/gen_models_json.py models.json
 
-Hashes and sizes are the real values of the files uploaded to the `models-2026.11` release
-(or of the pinned upstream files). Update them together with the uploaded files, then run
+Hashes and sizes are the real values of the files uploaded to the `models-2026.11` and
+`models-2026.12` releases (or of the pinned upstream files). Files already published keep their
+release (published assets are never replaced); the catalog itself moves to the newest release. Update them together with the uploaded files, then run
 `cargo test` (the catalog tests validate the result).
 """
 import json
 import sys
 
 REL = "https://github.com/NobpasinTumdee/quick-enhancer/releases/download/models-2026.11/"
+# v2.3 ("Make sharp"): new files and the schema-2 catalog. models-2026.11 keeps serving the schema-1
+# catalog to v2.2.
+REL2 = "https://github.com/NobpasinTumdee/quick-enhancer/releases/download/models-2026.12/"
+# SeedVR2-3B ONNX by Moonbox, pinned revision (dit.onnx.data is over GitHub's 2 GB asset limit).
+HF_SEEDVR2 = "https://huggingface.co/moonbox-dev/SeedVR2-3B-ONNX/resolve/e2a111d55922e9059a0d663bc189da766fc6b775/int8/"
 PYPI = "https://files.pythonhosted.org/packages/"
 
 
@@ -143,6 +149,40 @@ for pid, name, file, sha, size, lic in [
 ]:
     packages.append(file_pkg(pid, name, "2026.11", file, sha, size, "models/onnx/" + file, lic[0], lic[1]))
 
+RESTORMER = ("MIT (Syed Waqas Zamir et al., Restormer)", "https://github.com/swz30/Restormer")
+for pid, name, file, sha, size in [
+    ("onnx-restormer-motion", "Restormer motion deblurring (ONNX fp16)", "restormer-motion-fp16.onnx",
+     "6a8c46a3fd6fca3eeb5e61dce0ba2af93e69b553a492e04fd0c358cbcd08f9de", 54860561),
+    ("onnx-restormer-defocus", "Restormer defocus deblurring (ONNX fp16)", "restormer-defocus-fp16.onnx",
+     "ebe3e26750366837bb37d294abac9aec358262b3c0ba47494661c3ea786b35df", 54860561),
+]:
+    packages.append(file_pkg(pid, name, "2026.12", file, sha, size, "models/onnx/" + file, RESTORMER[0], RESTORMER[1],
+                             url=REL2 + file))
+packages.append(file_pkg("restormer-license", "Restormer licence (MIT)", "2026.12", "Restormer-LICENSE.txt",
+                         "2b93776512924bc095ec5d97a79d76cf1ab401ae641d1ae1f46e94f1c53a2e59", 1090,
+                         "licenses/models/Restormer-LICENSE.txt", RESTORMER[0], RESTORMER[1],
+                         url=REL2 + "Restormer-LICENSE.txt"))
+
+SEEDVR2_DIR = "models/seedvr2-3b/"
+SEEDVR2_LIC = ("Apache-2.0 (SeedVR2 by ByteDance Seed; ONNX export by Moonbox)",
+               "https://huggingface.co/moonbox-dev/SeedVR2-3B-ONNX")
+SEEDVR2_FILES = [
+    ("seedvr2-dit", "SeedVR2-3B DiT graph (int8)", "dit.onnx",
+     "e73874804e6062a81ea3a047ed74e671f27d54fee158408b04d803b0f6c95d21", 1630270),
+    ("seedvr2-dit-data", "SeedVR2-3B DiT weights (int8)", "dit.onnx.data",
+     "c36caaa979408e6b3ad6c956ba55e92d9120ae0c84ac62bc8537543d6e79790f", 3555440304),
+    ("seedvr2-vae-enc", "SeedVR2-3B VAE encoder", "vae_enc_first.onnx",
+     "d6a9041ed8a4eacf403229894704327dab9275218ac933dcd54cd44cb0db6dbe", 200468788),
+    ("seedvr2-vae-dec", "SeedVR2-3B VAE decoder", "vae_dec_first.onnx",
+     "8250314ef04dcae8adf28b5209baa254ba478537257206cce5f6670cd7eb05a7", 301715063),
+]
+for pid, name, file, sha, size in SEEDVR2_FILES:
+    packages.append(file_pkg(pid, name, "e2a111d", file, sha, size, SEEDVR2_DIR + file, SEEDVR2_LIC[0], SEEDVR2_LIC[1],
+                             url=HF_SEEDVR2 + file))
+packages.append(file_pkg("seedvr2-license", "SeedVR2-3B ONNX licence (Apache-2.0)", "e2a111d", "LICENSE.txt",
+                         "fa62fea050d25dbb5915b80cbb0a27b43317fe3c3fc614c0142b7d7429b24a3c", 11535,
+                         "licenses/seedvr2/LICENSE.txt", SEEDVR2_LIC[0], SEEDVR2_LIC[1], url=HF_SEEDVR2 + "LICENSE.txt"))
+
 
 def T(en, th):
     return dict(en=en, th=th)
@@ -267,6 +307,36 @@ models = [
              "GFPGAN by Xintao Wang et al. (TencentARC)"),
          "https://github.com/TencentARC/GFPGAN", "onnx-gfpgan", ["photo", "video"],
          requires=["yunet"]),
+    onnx("restormer-motion", "sharp", T("Restormer: camera shake", "Restormer: ภาพสั่น"),
+         T("Removes motion blur from camera shake or moving subjects. Faithful: it does not invent detail.",
+           "ลบภาพเบลอจากกล้องสั่นหรือวัตถุเคลื่อนที่ ให้ผลตรงกับต้นฉบับ ไม่แต่งรายละเอียดขึ้นเอง"),
+         "restormer-motion-fp16.onnx", 1, 512, False, "fp16", 3, 4, 900, 1500, 3.5,
+         lic("MIT", "https://github.com/swz30/Restormer/blob/main/LICENSE.md",
+             "Restormer by Syed Waqas Zamir et al. (CVPR 2022)"),
+         "https://github.com/swz30/Restormer", "onnx-restormer-motion", ["photo"],
+         sample=REL2 + "sample-restormer-motion.jpg"),
+    onnx("restormer-defocus", "sharp", T("Restormer: out of focus", "Restormer: โฟกัสพลาด"),
+         T("Sharpens out-of-focus and soft photos. Faithful: it does not invent detail.",
+           "ทำให้ภาพที่โฟกัสพลาดหรือภาพนุ่มคมขึ้น ให้ผลตรงกับต้นฉบับ ไม่แต่งรายละเอียดขึ้นเอง"),
+         "restormer-defocus-fp16.onnx", 1, 512, False, "fp16", 3, 4, 900, 1500, 3.5,
+         lic("MIT", "https://github.com/swz30/Restormer/blob/main/LICENSE.md",
+             "Restormer by Syed Waqas Zamir et al. (CVPR 2022)"),
+         "https://github.com/swz30/Restormer", "onnx-restormer-defocus", ["photo"],
+         sample=REL2 + "sample-restormer-defocus.jpg"),
+    dict(id="seedvr2-3b", group="sharp", backend="seedvr2",
+         name=T("SeedVR2 3B: generative (Creative)", "SeedVR2 3B: AI วาดรายละเอียดใหม่ (Creative)"),
+         desc=T("Redraws lost detail for very blurry photos, text and faces. Looks real but may not match "
+                "reality. About 1.5–2 minutes per photo; needs a GPU with 6 GB or more.",
+                "วาดรายละเอียดที่หายไปขึ้นใหม่ สำหรับภาพที่เบลอมาก ตัวหนังสือ และใบหน้า ดูสมจริงแต่อาจไม่ตรงกับของจริง "
+                "ใช้เวลาราว 1.5–2 นาทีต่อรูป ต้องใช้การ์ดจอ 6 GB ขึ้นไป"),
+         scales=[1], speed=1, quality=5, vram_min_mb=6000, vram_rec_mb=8000,
+         cost=dict(s_per_mp=60.0, vram_mb=6000),
+         license=lic("Apache-2.0", "https://huggingface.co/moonbox-dev/SeedVR2-3B-ONNX",
+                     "SeedVR2 by ByteDance Seed (Jianyi Wang et al.); ONNX export by Moonbox"),
+         source="https://github.com/ByteDance-Seed/SeedVR",
+         packages=[p[0] for p in SEEDVR2_FILES] + ["seedvr2-license"],
+         files=[SEEDVR2_DIR + p[2] for p in SEEDVR2_FILES], content=["photo"], requires=["runtime:onnx"],
+         sample=REL2 + "sample-seedvr2-3b.jpg"),
     onnx("codeformer", "face", T("CodeFormer (non-commercial)", "CodeFormer (ห้ามใช้เชิงพาณิชย์)"),
          T("Strong face restoration with a fidelity slider. Non-commercial use only.",
            "ฟื้นฟูใบหน้าได้แรง ปรับความใกล้เคียงต้นฉบับได้ ใช้ได้เฉพาะงานที่ไม่ใช่เชิงพาณิชย์"),
@@ -289,7 +359,12 @@ for name, desc, speed, quality, vmin, s in [
                        vmin * 2, s, RIFE, "https://github.com/TNTwise/rife-ncnn-vulkan", ["rife"],
                        [f"models/rife/{name}/flownet.param", f"models/rife/{name}/flownet.bin"], ["video"]))
 
+# The Restormer models also install the licence text (MIT asks for it to go with copies).
+for m in models:
+    if m["id"].startswith("restormer-"):
+        m["packages"].append("restormer-license")
+
 with open(sys.argv[1], "w", encoding="utf-8", newline="\n") as fh:
-    json.dump(dict(schema=1, catalog_version="2026.11.3", update_url=REL + "models.json",
+    json.dump(dict(schema=2, catalog_version="2026.12.1", update_url=REL2 + "models.json",
                    packages=packages, models=models), fh, ensure_ascii=False, indent=1)
     fh.write("\n")

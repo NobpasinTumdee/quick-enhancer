@@ -31,6 +31,9 @@ pub enum PreviewKind {
     Sample { start: f64, dur: f64 },
     /// Compare the source with an exported output file.
     CompareOutput { output: PathBuf, time: f64 },
+    /// "Make sharp": process only `rect` (x, y, w, h in source pixels) of an image. With
+    /// `compare`, show Faithful (left) against Creative (right) on that region.
+    Region { rect: [u32; 4], compare: bool },
 }
 
 #[derive(Clone, Debug)]
@@ -48,6 +51,8 @@ pub enum PreviewResult {
         after: RgbImage,
         note: String,
         secs: f64,
+        /// Captions for the two sides (`None` = Original / Enhanced).
+        labels: Option<(String, String)>,
     },
     Sample {
         item: u64,
@@ -217,7 +222,54 @@ fn render(
                 after,
                 note,
                 secs: t0.elapsed().as_secs_f64(),
+                labels: None,
             })
+        }
+        PreviewKind::Region { rect, compare } => {
+            let full = source_still(env, info, 0.0, cancel)?;
+            let [x, y, w, h] = crate::sharp::region::clamp(*rect, full.width(), full.height());
+            let crop = image::imageops::crop_imm(&full, x, y, w, h).to_image();
+            drop(full);
+            let mut rinfo = info.clone();
+            rinfo.width = w;
+            rinfo.height = h;
+            let root = temp_root(req.settings.video.temp_dir.as_deref());
+            let work = TempDir::new(&root, "preview")?;
+            let run = |s: &JobSettings| -> Result<(RgbImage, String), PipelineError> {
+                let plan = StagePlan::build(env, s, &rinfo)?;
+                let out = plan.process_still(crop.clone(), work.path(), cancel)?;
+                let mut note = plan.describe();
+                let extra = plan.sharp_report.lock().ok().and_then(|r| r.as_ref().map(|r| r.warnings.clone())).unwrap_or_default();
+                for w in plan.warnings.iter().chain(extra.iter()) {
+                    note += &format!(" · ⚠ {w}");
+                }
+                Ok((out, note))
+            };
+            let region = crate::t!("sharp.region_note", w = w, h = h, x = x, y = y);
+            if *compare {
+                let (faithful, creative) = crate::sharp::region::compare_settings(&req.settings);
+                let (a, _) = run(&faithful)?;
+                let (b, note) = run(&creative)?;
+                let pct = format!("{:.0}", creative.sharp.creative * 100.0);
+                Ok(PreviewResult::Still {
+                    item: req.item,
+                    before: a,
+                    after: b,
+                    note: format!("{region} · {note}"),
+                    secs: t0.elapsed().as_secs_f64(),
+                    labels: Some((crate::t!("sharp.side_faithful"), crate::t!("sharp.side_creative", pct = pct))),
+                })
+            } else {
+                let (after, note) = run(&req.settings)?;
+                Ok(PreviewResult::Still {
+                    item: req.item,
+                    before: crop,
+                    after,
+                    note: format!("{region} · {note}"),
+                    secs: t0.elapsed().as_secs_f64(),
+                    labels: None,
+                })
+            }
         }
         PreviewKind::CompareOutput { output, time } => {
             let before = source_still(env, info, *time, cancel)?;
@@ -234,6 +286,7 @@ fn render(
                     info = out_info.summary()
                 ),
                 secs: t0.elapsed().as_secs_f64(),
+                labels: None,
             })
         }
         PreviewKind::Sample { start, dur } => {

@@ -7,6 +7,8 @@ entirely on your PC:
   DAT2, HAT-L), plus your own ncnn / ONNX models
 * AI **cleanup** at the original size (JPEG artefacts, noise) and **face restoration** (GFPGAN,
   CodeFormer)
+* **Make sharp (AI)** for blurry photos: camera shake and out-of-focus blur removed (Restormer),
+  detail rebuilt, and an optional **Creative** generative pass (SeedVR2) for very blurry pictures
 * AI **frame generation** with RIFE 4.26 (2x/3x/4x or a target FPS) with scene-cut protection
 * An **AI models** page: install only the models you need (sizes, speed / quality, whether they
   fit your GPU, licence of each model), plus a first-run setup wizard
@@ -117,7 +119,8 @@ state (*Installed / Not installed / Update available / Incomplete*). **Install**
 and **Repair** (re-download and verify) work per model; files shared with other models are kept.
 Model lists in the settings show installed models first and the others greyed out with ⬇ and
 their size; picking one asks to install it. When the current settings need a model that isn't
-installed, the settings show **Install missing model**.
+installed, the settings show **Install missing parts** (all of them in one go, with the total
+size).
 
 | Task | Models | Backend |
 |---|---|---|
@@ -125,6 +128,7 @@ installed, the settings show **Install missing model**.
 | Upscale (anime) | Real-ESRGAN x4plus-anime, animevideov3, Real-CUGAN SE / Pro (2x/3x/4x, denoise levels) | ncnn |
 | AI cleanup (1x) | DeJPG, DeNoise (RealPLKSR), SCUNet | ONNX |
 | Faces | GFPGAN 1.4, CodeFormer (**non-commercial only**, accepted once before install); YuNet detector | ONNX |
+| Make blurry photos sharp | Restormer motion / defocus deblurring; SeedVR2 3B generative (Creative, optional, 3.8 GB) | ONNX |
 | Frame generation | RIFE v4.26 (default), v4.25-lite, v4.6, v4 | ncnn |
 
 * **ONNX runtime:** ONNX models run inside the app with ONNX Runtime — **DirectML** (any DirectX
@@ -174,6 +178,35 @@ installed, the settings show **Install missing model**.
   saved next to the source as `<name>_edited.<ext>`, appear in Outputs as "✂ Edited", and
   **Send to Video/Image page** queues them for enhancement.
 * **Settings** — Performance (Simple / Advanced), language, updates, tools, paths.
+
+### Make sharp (AI)
+
+A mode on the **Image** page for blurry photos (camera shake, out of focus, small or old
+pictures). Select an image and the app says in plain words what kind of blur it sees, suggests a
+preset and shows how much real detail is left.
+
+* **Presets:** Auto, Light blur, Strong blur, Camera shake, Out of focus, Old / low-res photo,
+  Portrait (faces).
+* **Faithful ↔ Creative:** *Faithful* (left) only sharpens what is in the photo: it deblurs with
+  Restormer, shrinks the image to the detail it really has and rebuilds it with RealPLKSR, so
+  it's quick (10–20 s per photo on a mid-range GPU). *Creative* blends in **SeedVR2**, a generative
+  model that redraws lost detail. It needs a GPU with 6 GB or more and takes about 1.5–2 minutes
+  per photo. Auto picks 50 % for strong / focus blur, old photos and portraits, and 0 % for
+  light blur and camera shake.
+* **Fix faces** (GFPGAN, or CodeFormer), output size (original / 2x / 4x), estimated time and
+  whether it fits your PC; **Advanced** has the deblur and detail models, downscale, tile, seed,
+  face strength and final sharpen.
+* **Preview region:** the preview processes only a box (drag it on the picture; by default it is
+  on the largest face), so trying settings is quick. **Faithful vs Creative** shows both side by
+  side; **Process full image** previews everything.
+* **Install missing parts** downloads the models the mode needs; the Creative model is offered
+  separately.
+
+> **About Creative results.** AI redraws details. Results look sharp but may not match reality:
+> text, faces and licence plates can look right and be wrong. Don't use them as evidence or for
+> documents. Files made with Creative are marked "✦ AI-generated details" in History and Outputs,
+> and carry the note "Processed with generative AI by Quick Enhancer" in their metadata (PNG
+> text chunk / JPEG comment). Everything still runs on your PC.
 
 ### Saved settings profiles
 
@@ -288,6 +321,12 @@ order, face alignment / detection decoding / paste-back, the catalog-based estim
 choice for profiles with missing models. `tests/models_real.rs` (`--ignored`) downloads real
 models and runs them: Real-CUGAN and ncnn custom models, ONNX models on DirectML vs the CPU,
 cleanup and transformer models, face restoration against reference images and all RIFE models.
+v2.3 adds tests for the blur analysis (sharp factor, motion direction, kinds), presets and the
+stage plan, downscale / target-size math, the SeedVR2 window / tile / blend math (checked
+against the reference pipeline), colour fix, the worker protocol (progress, errors, out of
+memory, crashes, cancel; `tests/sharp_worker.rs` runs the real exe), preview regions, the
+generative metadata note and the `sharp` catalog group. `tests/sharp_real.rs` (`--ignored`) runs
+Make sharp end to end with the real models, Faithful and Creative.
 
 ## Known limitations
 
@@ -303,8 +342,12 @@ cleanup and transformer models, face restoration against reference images and al
   already loaded by something else, Windows uses that one; if loading fails, the message suggests
   **Repair** or the official VC++ Redistributable.
 * Switching between the DirectML and CUDA runtimes needs an app restart.
-* **SeedVR2** (diffusion video restoration) was evaluated for 2.2 and left out: even 17 frames at
-  512×288 needed over 10 GB of VRAM and about 3.4 s per frame.
+* **SeedVR2** is used for single images only (Make sharp → Creative). For video it is too heavy:
+  17 frames at 512×288 needed over 10 GB of VRAM and about 3.4 s per frame.
+* **Make sharp:** Creative works on at most ~2 MP at a time (1 MP on GPUs with up to 7 GB) and is
+  scaled back up, so very large photos gain less. Auto cannot tell JPEG damage from strong blur,
+  so it may choose Creative 50 % where Faithful would be better. On the CPU only Faithful is
+  practical.
 * Frame generation uses integer multipliers only (target FPS rounds down to one).
 * WebP output is lossless only.
 * GPU telemetry: NVML for NVIDIA, PDH counters for other vendors on Windows; on Linux non-NVIDIA GPUs show "not available".
